@@ -329,10 +329,9 @@ def _intercept_search_response(page, from_str: str, to_str: str) -> list:
 
 def _resolve_pdfs_via_playwright(page, filing_stubs: list) -> list:
     """
-    Navigate to each eFD detail page in the authenticated Playwright browser.
-    The detail page is a JS SPA — we intercept the PDF response from the
-    embedded PDF viewer (PDFObject/iframe). Falls back to HEAD-probing URL patterns.
-    Returns list of trade dicts.
+    Resolve PDFs for each eFD filing using the authenticated Playwright browser.
+    Uses page.request.get() to carry session cookies for PDF downloads.
+    Probes /search/print/{type}/{uuid}/ URL patterns (discovered from 'paper' filings).
     """
     all_trades = []
 
@@ -344,76 +343,76 @@ def _resolve_pdfs_via_playwright(page, filing_stubs: list) -> list:
         if not detail_url:
             continue
 
-        # Intercept PDF bytes from network during page navigation
-        captured_pdf = {}
+        # Parse the detail URL to extract type and UUID
+        # Format: /search/view/{type}/{uuid}/
+        parts = detail_url.rstrip("/").split("/")
+        uuid = parts[-1] if parts else ""
+        view_type = parts[-2] if len(parts) >= 2 else ""
+        log(f"  {member} ({filing_date}): type={view_type}, uuid={uuid[:20]}...")
 
-        def handle_pdf(response):
-            ct = response.headers.get("content-type", "")
-            url = response.url
-            if "pdf" in ct.lower() or url.lower().endswith(".pdf"):
-                log(f"    PDF response: {url[:80]}  CT={ct}")
-                try:
-                    captured_pdf["body"] = response.body()
-                    captured_pdf["url"] = url
-                except Exception as e:
-                    log(f"    Failed to capture PDF body: {e}")
-
-        page.on("response", handle_pdf)
-        try:
-            page.goto(detail_url, wait_until="networkidle", timeout=20000)
-        except Exception as e:
-            log(f"  Detail page nav error {detail_url}: {e}")
-        finally:
-            page.remove_listener("response", handle_pdf)
-
-        if "body" in captured_pdf:
-            trades = parse_ptr_pdf(captured_pdf["body"], member, filing_date)
-            log(f"  {member} ({filing_date}): {len(trades)} trades (from browser PDF)")
-            all_trades.extend(trades)
-            continue
-
-        # PDF not auto-loaded — look for PDF link in the rendered page
-        pdf_url = ""
-        try:
-            links = page.locator("a[href*='.pdf'], a[href*='/print'], a[href*='/download']").all()
-            for lnk in links[:5]:
-                href = lnk.get_attribute("href") or ""
-                if href:
-                    pdf_url = href if href.startswith("http") else EFDSEARCH + href
-                    log(f"  Found PDF link: {pdf_url[:80]}")
-                    break
-        except Exception:
-            pass
-
-        # Last resort: probe common URL patterns with HEAD requests
-        if not pdf_url and "/search/view/" in detail_url:
-            uuid_part = detail_url.rstrip("/").split("/")[-1]
-            for pattern in [
-                f"{EFDSEARCH}/search/view/ptr/{uuid_part}/print_annual_ptr/",
-                f"{EFDSEARCH}/search/view/ptr/{uuid_part}/print_ptr/",
-                f"{EFDSEARCH}/search/view/paper/{uuid_part}/print_annual_ptr/",
-            ]:
-                try:
-                    r = requests.head(pattern, headers=HEADERS, timeout=8, allow_redirects=True)
-                    if r.status_code == 200 and "pdf" in r.headers.get("content-type", ""):
-                        pdf_url = pattern
-                        log(f"  Probed PDF URL: {pdf_url}")
-                        break
-                except Exception:
-                    pass
-
-        if pdf_url:
+        # Strategy 1: Probe /search/print/{type}/{uuid}/ using browser request (carries auth)
+        pdf_bytes = None
+        for print_type in ([view_type] if view_type else []) + ["ptr", "paper"]:
+            pdf_url = f"{EFDSEARCH}/search/print/{print_type}/{uuid}/"
             try:
-                r = requests.get(pdf_url, headers=HEADERS, timeout=30)
-                if r.status_code == 200 and "pdf" in r.headers.get("content-type", ""):
-                    trades = parse_ptr_pdf(r.content, member, filing_date)
-                    log(f"  {member} ({filing_date}): {len(trades)} trades (from PDF URL)")
-                    all_trades.extend(trades)
-                    continue
+                resp = page.request.get(pdf_url)
+                ct = resp.headers.get("content-type", "")
+                log(f"    GET {pdf_url}: status={resp.status}  CT={ct[:40]}")
+                if resp.ok and "pdf" in ct.lower():
+                    pdf_bytes = resp.body()
+                    log(f"    Got PDF: {len(pdf_bytes)} bytes")
+                    break
+                elif resp.ok:
+                    log(f"    Not PDF — body: {resp.text()[:100]}")
             except Exception as e:
-                log(f"  PDF fetch error: {e}")
+                log(f"    Request error: {e}")
 
-        log(f"  No PDF obtained for {member} ({filing_date}) — detail: {detail_url[-60:]}")
+        # Strategy 2: Navigate to detail page and look for rendered PDF links
+        if pdf_bytes is None:
+            captured_pdf = {}
+
+            def handle_pdf(response):
+                ct = response.headers.get("content-type", "")
+                if "pdf" in ct.lower():
+                    log(f"    PDF response intercepted: {response.url[:80]}  CT={ct}")
+                    try:
+                        captured_pdf["body"] = response.body()
+                    except Exception as e:
+                        log(f"    PDF body error: {e}")
+
+            page.on("response", handle_pdf)
+            try:
+                page.goto(detail_url, wait_until="networkidle", timeout=20000)
+            except Exception as e:
+                log(f"    Detail nav error: {e}")
+            finally:
+                page.remove_listener("response", handle_pdf)
+
+            if "body" in captured_pdf:
+                pdf_bytes = captured_pdf["body"]
+            else:
+                # Look for print/download links in rendered HTML
+                try:
+                    links = page.locator("a").all()
+                    for lnk in links:
+                        href = lnk.get_attribute("href") or ""
+                        if "/print/" in href or ".pdf" in href.lower():
+                            full = href if href.startswith("http") else EFDSEARCH + href
+                            log(f"    Found print link: {full}")
+                            r2 = page.request.get(full)
+                            ct2 = r2.headers.get("content-type", "")
+                            if r2.ok and "pdf" in ct2.lower():
+                                pdf_bytes = r2.body()
+                                break
+                except Exception as e:
+                    log(f"    Link probe error: {e}")
+
+        if pdf_bytes:
+            trades = parse_ptr_pdf(pdf_bytes, member, filing_date)
+            log(f"  {member} ({filing_date}): {len(trades)} trades")
+            all_trades.extend(trades)
+        else:
+            log(f"  No PDF for {member} ({filing_date})")
 
     return all_trades
 
