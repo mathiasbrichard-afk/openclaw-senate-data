@@ -327,11 +327,92 @@ def _intercept_search_response(page, from_str: str, to_str: str) -> list:
     return filings
 
 
+def _parse_ptr_transactions_from_html(html: str, member: str, filing_date: str) -> list:
+    """
+    Parse electronic PTR transaction data from eFD rendered HTML.
+    Electronic filings store trade data in a JS-rendered table, not a PDF.
+    """
+    from bs4 import BeautifulSoup
+    trades = []
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Log the page for debugging
+    title = soup.find("title")
+    log(f"    PTR HTML title: {title.get_text(strip=True) if title else 'N/A'}")
+    tables = soup.find_all("table")
+    log(f"    Tables found: {len(tables)}")
+    for i, t in enumerate(tables[:3]):
+        rows = t.find_all("tr")
+        log(f"    Table {i}: {len(rows)} rows")
+        for row in rows[:5]:
+            log(f"      {row.get_text(separator='|', strip=True)[:120]!r}")
+
+    # Parse transaction rows — eFD typically has columns:
+    # Asset | Asset Type | Transaction Type | Date | Amount | Comment
+    for table in tables:
+        header_row = table.find("tr")
+        if not header_row:
+            continue
+        headers = [th.get_text(strip=True).lower() for th in header_row.find_all(["th", "td"])]
+        log(f"    Headers: {headers[:8]}")
+
+        # Check if this looks like a transactions table
+        if not any(h in str(headers) for h in ["asset", "transaction", "amount", "date"]):
+            continue
+
+        for row in table.find_all("tr")[1:]:  # skip header
+            cells = [td.get_text(strip=True) for td in row.find_all("td")]
+            if len(cells) < 4:
+                continue
+            log(f"    Row: {cells[:6]}")
+
+            # Try to map cells to trade fields
+            # Typical eFD order: [owner, asset_name, asset_type, tx_type, date, notif_date, amount, cap_gains]
+            if len(cells) >= 6:
+                asset_raw = cells[1] if len(cells) > 1 else ""
+                tx_type = cells[3] if len(cells) > 3 else ""
+                date_str = cells[4] if len(cells) > 4 else ""
+                amount_raw = cells[6] if len(cells) > 6 else ""
+
+                # Parse date
+                tx_date = None
+                for fmt in ["%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y"]:
+                    try:
+                        tx_date = datetime.strptime(date_str, fmt)
+                        break
+                    except ValueError:
+                        continue
+
+                if not tx_date:
+                    continue
+
+                ticker = _extract_ticker(asset_raw + " " + (cells[2] if len(cells) > 2 else ""))
+                if ticker == "N/A":
+                    continue  # Skip non-stock assets
+
+                trades.append({
+                    "member": member,
+                    "chamber": "Senate",
+                    "owner": cells[0] if cells else "Member",
+                    "asset": _clean_asset(asset_raw),
+                    "ticker": ticker,
+                    "type": _normalize_type(tx_type),
+                    "date": tx_date.strftime("%Y-%m-%d"),
+                    "filing_date": filing_date,
+                    "amount_raw": amount_raw,
+                    "amount_lower": _amount_lower(amount_raw),
+                })
+
+    return trades
+
+
 def _resolve_pdfs_via_playwright(page, filing_stubs: list) -> list:
     """
-    Resolve PDFs for each eFD filing using the authenticated Playwright browser.
-    Uses page.request.get() to carry session cookies for PDF downloads.
-    Probes /search/print/{type}/{uuid}/ URL patterns (discovered from 'paper' filings).
+    Two paths based on filing type:
+    - 'paper' type: navigate to /search/print/paper/{uuid}/ — Playwright intercepts
+      the PDF sub-resource automatically loaded by the print page's JS/embed.
+    - 'ptr' type: navigate to detail page — intercept JSON transaction API response
+      OR parse the JS-rendered HTML table.
     """
     all_trades = []
 
@@ -343,76 +424,96 @@ def _resolve_pdfs_via_playwright(page, filing_stubs: list) -> list:
         if not detail_url:
             continue
 
-        # Parse the detail URL to extract type and UUID
-        # Format: /search/view/{type}/{uuid}/
+        # Extract type and UUID from /search/view/{type}/{uuid}/
         parts = detail_url.rstrip("/").split("/")
         uuid = parts[-1] if parts else ""
         view_type = parts[-2] if len(parts) >= 2 else ""
-        log(f"  {member} ({filing_date}): type={view_type}, uuid={uuid[:20]}...")
+        log(f"  {member} ({filing_date}): type={view_type}")
 
-        # Strategy 1: Probe /search/print/{type}/{uuid}/ using browser request (carries auth)
-        pdf_bytes = None
-        for print_type in ([view_type] if view_type else []) + ["ptr", "paper"]:
-            pdf_url = f"{EFDSEARCH}/search/print/{print_type}/{uuid}/"
-            try:
-                resp = page.request.get(pdf_url)
-                ct = resp.headers.get("content-type", "")
-                log(f"    GET {pdf_url}: status={resp.status}  CT={ct[:40]}")
-                if resp.ok and "pdf" in ct.lower():
-                    pdf_bytes = resp.body()
-                    log(f"    Got PDF: {len(pdf_bytes)} bytes")
-                    break
-                elif resp.ok:
-                    log(f"    Not PDF — body: {resp.text()[:100]}")
-            except Exception as e:
-                log(f"    Request error: {e}")
+        captured = {}
 
-        # Strategy 2: Navigate to detail page and look for rendered PDF links
-        if pdf_bytes is None:
-            captured_pdf = {}
-
-            def handle_pdf(response):
-                ct = response.headers.get("content-type", "")
-                if "pdf" in ct.lower():
-                    log(f"    PDF response intercepted: {response.url[:80]}  CT={ct}")
-                    try:
-                        captured_pdf["body"] = response.body()
-                    except Exception as e:
-                        log(f"    PDF body error: {e}")
-
-            page.on("response", handle_pdf)
-            try:
-                page.goto(detail_url, wait_until="networkidle", timeout=20000)
-            except Exception as e:
-                log(f"    Detail nav error: {e}")
-            finally:
-                page.remove_listener("response", handle_pdf)
-
-            if "body" in captured_pdf:
-                pdf_bytes = captured_pdf["body"]
-            else:
-                # Look for print/download links in rendered HTML
+        def handle_response(response):
+            ct = response.headers.get("content-type", "")
+            url = response.url
+            if "pdf" in ct.lower():
+                log(f"    PDF intercepted: {url[:80]}")
                 try:
-                    links = page.locator("a").all()
-                    for lnk in links:
-                        href = lnk.get_attribute("href") or ""
-                        if "/print/" in href or ".pdf" in href.lower():
-                            full = href if href.startswith("http") else EFDSEARCH + href
-                            log(f"    Found print link: {full}")
-                            r2 = page.request.get(full)
-                            ct2 = r2.headers.get("content-type", "")
-                            if r2.ok and "pdf" in ct2.lower():
-                                pdf_bytes = r2.body()
-                                break
+                    captured["pdf"] = response.body()
                 except Exception as e:
-                    log(f"    Link probe error: {e}")
+                    log(f"    PDF body error: {e}")
+            elif "json" in ct.lower() and ("transaction" in url or "ptr" in url or "report" in url):
+                log(f"    JSON intercepted: {url[:80]}")
+                try:
+                    captured["json"] = response.body()
+                    captured["json_url"] = url
+                except Exception as e:
+                    log(f"    JSON body error: {e}")
 
-        if pdf_bytes:
-            trades = parse_ptr_pdf(pdf_bytes, member, filing_date)
-            log(f"  {member} ({filing_date}): {len(trades)} trades")
+        page.on("response", handle_response)
+
+        # Navigate to the appropriate page
+        nav_url = (
+            f"{EFDSEARCH}/search/print/paper/{uuid}/"
+            if view_type == "paper"
+            else detail_url
+        )
+        try:
+            page.goto(nav_url, wait_until="networkidle", timeout=25000)
+        except Exception as e:
+            log(f"    Nav error {nav_url}: {e}")
+
+        page.remove_listener("response", handle_response)
+
+        # Process captured data
+        if "pdf" in captured:
+            trades = parse_ptr_pdf(captured["pdf"], member, filing_date)
+            log(f"  {member} ({filing_date}): {len(trades)} trades (PDF)")
             all_trades.extend(trades)
-        else:
-            log(f"  No PDF for {member} ({filing_date})")
+            continue
+
+        if "json" in captured:
+            try:
+                data = json.loads(captured["json"])
+                log(f"  JSON preview ({captured.get('json_url','')[-40:]}): {json.dumps(data)[:400]}")
+                # Try to extract trades from JSON
+                rows = data.get("transactions", data.get("data", data.get("trades", [])))
+                for row in rows:
+                    ticker = row.get("ticker") or _extract_ticker(str(row.get("asset", "")))
+                    if ticker == "N/A":
+                        continue
+                    try:
+                        d = datetime.strptime(row.get("transaction_date", ""), "%m/%d/%Y")
+                        date_str = d.strftime("%Y-%m-%d")
+                    except Exception:
+                        date_str = row.get("transaction_date", "")
+                    all_trades.append({
+                        "member": member, "chamber": "Senate",
+                        "owner": row.get("owner", "Member"),
+                        "asset": row.get("asset_name", row.get("asset", "")),
+                        "ticker": ticker,
+                        "type": _normalize_type(row.get("transaction_type", "")),
+                        "date": date_str,
+                        "filing_date": filing_date,
+                        "amount_raw": row.get("amount", ""),
+                        "amount_lower": _amount_lower(row.get("amount", "")),
+                    })
+                log(f"  {member} ({filing_date}): {len(rows)} rows from JSON")
+                continue
+            except Exception as e:
+                log(f"  JSON parse error: {e}")
+
+        # Fallback: parse the rendered HTML
+        try:
+            html_content = page.content()
+            log(f"    Rendered HTML: {len(html_content)} bytes")
+            trades = _parse_ptr_transactions_from_html(html_content, member, filing_date)
+            if trades:
+                log(f"  {member} ({filing_date}): {len(trades)} trades (HTML)")
+                all_trades.extend(trades)
+            else:
+                log(f"  No trades found for {member} ({filing_date})")
+        except Exception as e:
+            log(f"  HTML parse error: {e}")
 
     return all_trades
 
