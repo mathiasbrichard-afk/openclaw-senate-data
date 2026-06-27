@@ -258,45 +258,54 @@ def _probe_scripts_for_api(session: requests.Session, soup: BeautifulSoup, base_
     return interesting
 
 
-def _accept_agreement(session: requests.Session) -> bool:
+def _accept_agreement(session: requests.Session) -> str:
     """
     efdsearch.senate.gov gates searches behind a prohibition_agreement POST form.
-    Accept it so the session cookie allows access to the search endpoint.
-    Returns True if successful.
+    Accept it so the session cookie allows access to /search/report/data/.
+    Returns the CSRF token from cookie (needed as X-CSRFToken header for AJAX calls).
     """
     try:
         r = session.get(EFDSEARCH + "/", timeout=15)
         if r.status_code != 200:
             log(f"  Agreement page returned {r.status_code}")
-            return False
+            return ""
         soup = BeautifulSoup(r.content, "html.parser")
-        csrf = ""
+        # Get CSRF from form field
+        form_csrf = ""
         for inp in soup.find_all("input"):
             if inp.get("name") == "csrfmiddlewaretoken":
-                csrf = inp.get("value", "")
+                form_csrf = inp.get("value", "")
                 break
-        log(f"  CSRF token: {csrf[:20]}...")
+        # Also log cookies we have so far
+        cookie_csrf = session.cookies.get("csrftoken", "")
+        log(f"  Form CSRF: {form_csrf[:20]}...  Cookie CSRF: {cookie_csrf[:20]}...")
+
         post_resp = session.post(
             EFDSEARCH + "/",
-            data={"prohibition_agreement": "1", "csrfmiddlewaretoken": csrf},
+            data={"prohibition_agreement": "1", "csrfmiddlewaretoken": form_csrf},
             headers={**HEADERS, "Referer": EFDSEARCH + "/", "Origin": EFDSEARCH},
             timeout=15,
             allow_redirects=True,
         )
         log(f"  Agreement POST → {post_resp.status_code}, URL: {post_resp.url}")
+        log(f"  Cookies after POST: {dict(session.cookies)}")
+
+        # CSRF token for AJAX calls comes from cookie, not form
+        csrf_cookie = session.cookies.get("csrftoken", form_csrf)
+        log(f"  CSRF cookie for AJAX: {csrf_cookie[:20]}...")
+
         s = BeautifulSoup(post_resp.content, "html.parser")
         title = s.find("title")
         log(f"  Post-agreement page title: {title.get_text(strip=True) if title else 'N/A'}")
-        for a in s.find_all("a", href=True)[:20]:
-            log(f"    Link: {a.get('href')!r}: {a.get_text(strip=True)[:60]!r}")
         for form in s.find_all("form"):
             log(f"    Form action={form.get('action')!r}")
             for inp in form.find_all(["input", "select"]):
-                log(f"      {inp.name} name={inp.get('name')!r} value={str(inp.get('value',''))[:60]!r}")
-        return post_resp.status_code == 200
+                if inp.get("name") not in ("csrfmiddlewaretoken",):
+                    log(f"      {inp.name} name={inp.get('name')!r} value={str(inp.get('value',''))[:60]!r}")
+        return csrf_cookie
     except Exception as e:
         log(f"  Agreement POST failed: {e}")
-        return False
+        return ""
 
 
 def search_senate_ptrs(session: requests.Session, from_date: datetime, to_date: datetime) -> list:
@@ -305,7 +314,7 @@ def search_senate_ptrs(session: requests.Session, from_date: datetime, to_date: 
 
     # --- Step 0: Accept agreement gate on efdsearch ---
     log("Accepting efdsearch prohibition agreement...")
-    _accept_agreement(session)
+    csrf_token = _accept_agreement(session)
 
     # --- Step 1: Probe the main eFD page ---
     for probe_url in [BASE + "/", EFDSEARCH + "/search/home/"]:
@@ -361,11 +370,22 @@ def search_senate_ptrs(session: requests.Session, from_date: datetime, to_date: 
         f"{EFDSEARCH}/api/search/?report_types=PTR&dateRange=custom&fromDate={from_str}&toDate={to_str}",
     ]
 
+    ajax_headers = {
+        **HEADERS,
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "X-Requested-With": "XMLHttpRequest",
+        "Referer": f"{EFDSEARCH}/search/home/",
+    }
+    if csrf_token:
+        ajax_headers["X-CSRFToken"] = csrf_token
+
     for url in api_urls:
         try:
-            r = session.get(url, headers={**HEADERS, "Accept": "application/json,text/html,*/*;q=0.8"}, timeout=15)
+            r = session.get(url, headers=ajax_headers, timeout=15)
             ct = r.headers.get("Content-Type", "")
             log(f"  {url}: {r.status_code}  CT={ct[:60]}")
+            if r.status_code in (403, 503):
+                log(f"    Error body: {r.text[:400]}")
 
             if r.status_code != 200:
                 continue
