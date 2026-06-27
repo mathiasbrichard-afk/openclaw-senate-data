@@ -19,8 +19,9 @@ import requests
 from bs4 import BeautifulSoup
 
 BASE = "https://www.disclosure.senate.gov"
-# The old efts.senate.gov is NXDOMAIN; try efts2 (the likely replacement)
-EFTS2 = "https://efts2.senate.gov"
+# Discovered from main.js on disclosure.senate.gov — the actual eFD search domain
+EFDSEARCH = "https://efdsearch.senate.gov"
+EFD = "https://efd.senate.gov"
 OUTPUT = Path("data/senate_ptrs.json")
 LOOKBACK_DAYS = 90
 MAX_PDFS = 60
@@ -261,8 +262,8 @@ def search_senate_ptrs(session: requests.Session, from_date: datetime, to_date: 
     from_str = from_date.strftime("%Y-%m-%d")
     to_str = to_date.strftime("%Y-%m-%d")
 
-    # --- Step 1: Probe the main eFD page ---
-    for probe_url in [BASE + "/", BASE + "/Home/Home", BASE + "/Home/", BASE + "/eFD/"]:
+    # --- Step 1: Probe the main eFD page and the newly discovered efdsearch domain ---
+    for probe_url in [BASE + "/", EFDSEARCH + "/", EFDSEARCH + "/search/", EFD + "/"]:
         log(f"Probing {probe_url} ...")
         try:
             resp = session.get(probe_url, timeout=30)
@@ -299,19 +300,20 @@ def search_senate_ptrs(session: requests.Session, from_date: datetime, to_date: 
             log(f"  Probe failed: {e}")
 
     # --- Step 2: Try JSON API endpoints ---
+    # efdsearch.senate.gov and efd.senate.gov discovered from main.js on disclosure.senate.gov
     api_urls = [
-        # efts2 — likely replacement for the defunct efts.senate.gov
-        f"{EFTS2}/LATEST/search-index?q=&report_types=PTR&dateRange=custom&fromDate={from_str}&toDate={to_str}&results_count=100",
-        f"{EFTS2}/LATEST/search-index?q=&dateRange=custom&fromDate={from_str}&toDate={to_str}&results_count=100",
-        # www.disclosure.senate.gov paths
+        # Primary: efdsearch — the actual eFD search API (discovered from main.js)
+        f"{EFDSEARCH}/search/home/",
+        f"{EFDSEARCH}/search/",
+        f"{EFDSEARCH}/LATEST/search-index?q=&report_types=PTR&dateRange=custom&fromDate={from_str}&toDate={to_str}&results_count=100",
+        f"{EFDSEARCH}/api/v1/filings?type=PTR&fromDate={from_str}&toDate={to_str}&limit=100",
+        f"{EFDSEARCH}/api/search?q=&report_types=PTR&dateRange=custom&fromDate={from_str}&toDate={to_str}",
+        # efd.senate.gov — secondary domain discovered from main.js
+        f"{EFD}/LATEST/search-index?q=&report_types=PTR&dateRange=custom&fromDate={from_str}&toDate={to_str}&results_count=100",
+        f"{EFD}/api/v1/filings?type=PTR&fromDate={from_str}&toDate={to_str}&limit=100",
+        # www.disclosure.senate.gov paths (fallback)
         f"{BASE}/LATEST/search-index?q=&report_types=PTR&dateRange=custom&fromDate={from_str}&toDate={to_str}&results_count=100",
         f"{BASE}/api/v1/filings?type=PTR&fromDate={from_str}&toDate={to_str}&limit=100",
-        f"{BASE}/api/search?q=&report_types=PTR&dateRange=custom&fromDate={from_str}&toDate={to_str}&results_count=100",
-        f"{BASE}/api/filings?filing_type=PTR&from_date={from_str}&to_date={to_str}&limit=100",
-        f"{BASE}/Home/Search?ReportType=ptr&FromDate={from_str}&ToDate={to_str}&format=json",
-        f"{BASE}/Financial/Search?type=PTR&fromDate={from_str}&toDate={to_str}&format=json",
-        # Original EFTS (may be resurrected or aliased)
-        f"https://efts.senate.gov/LATEST/search-index?q=&report_types=PTR&dateRange=custom&fromDate={from_str}&toDate={to_str}&results_count=100",
     ]
 
     for url in api_urls:
@@ -348,10 +350,12 @@ def search_senate_ptrs(session: requests.Session, from_date: datetime, to_date: 
     # --- Step 3: Try HTML-based eFD search pages ---
     log("Trying eFD-specific HTML search pages...")
     efd_search_pages = [
+        f"{EFDSEARCH}/search/home/",
+        f"{EFDSEARCH}/search/results/",
+        f"{EFD}/search/",
+        f"{EFD}/Home/Search",
         f"{BASE}/Home/Search",
         f"{BASE}/eFD/Search",
-        f"{BASE}/Financial/Search",
-        f"{BASE}/Home/Home",
     ]
     for page_url in efd_search_pages:
         try:
