@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Senate STOCK Act PTR scraper.
-Runs on GitHub Actions (AWS us-east-1 runners bypass Akamai geo-block on disclosure.senate.gov).
+Senate STOCK Act PTR scraper — uses Playwright (headless Chromium) to bypass
+Akamai WAF on efdsearch.senate.gov, which requires real browser execution.
 
+Runs on GitHub Actions (installs Chromium via playwright install).
 Outputs data/senate_ptrs.json — rolling 90-day window of Senate stock trades.
-The congress-tracker bot reads this file via raw.githubusercontent.com.
 """
 
 import io
@@ -16,29 +16,26 @@ from pathlib import Path
 
 import pdfplumber
 import requests
-from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
-BASE = "https://www.disclosure.senate.gov"
-# Discovered from main.js on disclosure.senate.gov — the actual eFD search domain
 EFDSEARCH = "https://efdsearch.senate.gov"
-EFD = "https://efd.senate.gov"
 OUTPUT = Path("data/senate_ptrs.json")
 LOOKBACK_DAYS = 90
 MAX_PDFS = 60
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
 }
 
 
 def log(msg):
-    print(f"[{datetime.utcnow():%H:%M:%S}] {msg}", flush=True)
+    now = datetime.utcnow()
+    print(f"[{now:%H:%M:%S}] {msg}", flush=True)
 
 
 # ---------------------------------------------------------------------------
-# PDF parsing — Senate PTRs follow the same STOCK Act table format as House
+# PDF parsing
 # ---------------------------------------------------------------------------
 
 def _amount_lower(s: str) -> int:
@@ -150,380 +147,230 @@ def parse_ptr_pdf(pdf_bytes: bytes, member_name: str, filing_date: str = "") -> 
 
 
 # ---------------------------------------------------------------------------
-# Senate eFD site discovery + filing search
+# Playwright browser scraper
 # ---------------------------------------------------------------------------
 
-def _extract_filings_from_json(data) -> list:
-    """Parse common JSON response formats from government disclosure APIs."""
+def _intercept_search_response(page, from_str: str, to_str: str) -> list:
+    """
+    Use Playwright to navigate efdsearch, accept the agreement, submit a PTR
+    date-range search, and capture the XHR response via network interception.
+    Returns a list of filing dicts.
+    """
     filings = []
+    captured = {}
 
-    if isinstance(data, list):
-        items = data
-    elif isinstance(data, dict):
-        # Elasticsearch: {"hits": {"hits": [...]}}
-        if "hits" in data:
-            hits = data["hits"]
-            items = hits.get("hits", hits) if isinstance(hits, dict) else hits
-            items = [h.get("_source", h) for h in items]
-        elif "results" in data:
-            items = data["results"]
-        elif "data" in data:
-            items = data["data"]
-        elif "filings" in data:
-            items = data["filings"]
+    def handle_response(response):
+        url = response.url
+        if "/search/report/data/" in url:
+            log(f"  Captured XHR: {url[:100]}  status={response.status}")
+            try:
+                body = response.body()
+                captured["data"] = body
+                captured["status"] = response.status
+                captured["url"] = url
+            except Exception as e:
+                log(f"  Failed to read XHR body: {e}")
+
+    page.on("response", handle_response)
+
+    log(f"  Navigating to {EFDSEARCH}/")
+    page.goto(EFDSEARCH + "/", wait_until="networkidle", timeout=30000)
+    log(f"  Page title: {page.title()}")
+
+    # Accept the prohibition agreement (click the checkbox)
+    try:
+        checkbox = page.locator("#agree_statement")
+        if checkbox.count() > 0:
+            log("  Clicking agreement checkbox...")
+            checkbox.check()
+            page.wait_for_load_state("networkidle", timeout=10000)
+            log(f"  After agreement: {page.title()}")
         else:
-            log(f"    Unknown JSON structure, keys: {list(data.keys())}")
-            return []
-    else:
-        return []
+            log("  No agreement checkbox found — may already be agreed")
+    except PWTimeout:
+        log("  Agreement checkbox timeout — continuing")
+    except Exception as e:
+        log(f"  Agreement checkbox error: {e}")
 
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        member = (
-            item.get("name") or item.get("filer_name")
-            or (item.get("first_name", "") + " " + item.get("last_name", "")).strip()
-            or "Unknown"
-        ).strip()
-        pdf_url = (
-            item.get("pdf_url") or item.get("document_url") or item.get("link")
-            or item.get("url") or item.get("filing_url") or ""
-        )
-        filing_date = item.get("date_filed") or item.get("date") or item.get("filed_at") or ""
-        if member or pdf_url:
-            filings.append({"member": member, "pdf_url": pdf_url, "filing_date": filing_date, "raw": item})
+    # Navigate to the search page
+    log(f"  Navigating to {EFDSEARCH}/search/home/")
+    page.goto(EFDSEARCH + "/search/home/", wait_until="networkidle", timeout=30000)
+    log(f"  Search page title: {page.title()}")
 
-    log(f"    Extracted {len(filings)} filings from JSON")
+    # Log the page content to understand the search form
+    page_content = page.content()
+    log(f"  Page content size: {len(page_content)} bytes")
+
+    # Look for form fields
+    inputs = page.locator("input, select").all()
+    log(f"  Found {len(inputs)} form inputs on search page")
+    for inp in inputs[:20]:
+        try:
+            name = inp.get_attribute("name") or ""
+            itype = inp.get_attribute("type") or "text"
+            val = inp.get_attribute("value") or ""
+            log(f"    input name={name!r} type={itype!r} value={val[:40]!r}")
+        except Exception:
+            pass
+
+    # Try to set the date range and report type
+    try:
+        # Try common field selectors for date range
+        for date_from_sel in ["#fromDate", "[name='fromDate']", "[name='from_date']", "[name='dateFrom']"]:
+            loc = page.locator(date_from_sel)
+            if loc.count() > 0:
+                log(f"  Setting fromDate via {date_from_sel}")
+                loc.fill(from_str)
+                break
+
+        for date_to_sel in ["#toDate", "[name='toDate']", "[name='to_date']", "[name='dateTo']"]:
+            loc = page.locator(date_to_sel)
+            if loc.count() > 0:
+                log(f"  Setting toDate via {date_to_sel}")
+                loc.fill(to_str)
+                break
+
+        # Select PTR report type
+        for ptr_sel in [
+            "select[name='report_types[]']",
+            "select[name='report_types']",
+            "select[name='reportType']",
+            "#report_types",
+        ]:
+            loc = page.locator(ptr_sel)
+            if loc.count() > 0:
+                log(f"  Selecting PTR via {ptr_sel}")
+                loc.select_option(label="Periodic Transaction Report")
+                break
+
+        # Click search button
+        for btn_sel in [
+            "button[type='submit']",
+            "input[type='submit']",
+            "#btnSearch",
+            ".btn-search",
+            "button:has-text('Search')",
+            "input[value='Search']",
+        ]:
+            btn = page.locator(btn_sel)
+            if btn.count() > 0:
+                log(f"  Clicking search via {btn_sel}")
+                btn.first.click()
+                page.wait_for_load_state("networkidle", timeout=30000)
+                break
+
+    except PWTimeout:
+        log("  Search form interaction timed out")
+    except Exception as e:
+        log(f"  Search form error: {e}")
+
+    # Log what we captured
+    log(f"  Captured XHR data: {'yes' if 'data' in captured else 'no'}")
+    if "data" in captured:
+        try:
+            data = json.loads(captured["data"])
+            log(f"  XHR JSON preview: {json.dumps(data)[:800]}")
+
+            # Parse DataTables response format: {"data": [...], "recordsTotal": N}
+            rows = data.get("data", data.get("results", data.get("filings", [])))
+            if isinstance(rows, list):
+                log(f"  Rows in response: {len(rows)}")
+                for row in rows[:3]:
+                    log(f"    Sample row: {json.dumps(row)[:200]}")
+                for row in rows:
+                    if not isinstance(row, (list, dict)):
+                        continue
+                    # DataTables rows can be lists or dicts
+                    if isinstance(row, list):
+                        # Common column order: [name, office/state, filing_type, date, link]
+                        member = str(row[0]) if len(row) > 0 else "Unknown"
+                        link_html = str(row[-1]) if row else ""
+                    else:
+                        member = row.get("name") or row.get("filer_name") or "Unknown"
+                        link_html = row.get("link") or row.get("pdf_url") or ""
+
+                    # Extract PDF URL from link HTML if it's an HTML string
+                    pdf_url = ""
+                    if "<a" in link_html:
+                        m = re.search(r'href=["\']([^"\']+\.pdf)["\']', link_html, re.I)
+                        if m:
+                            pdf_url = m.group(1)
+                    elif link_html.endswith(".pdf"):
+                        pdf_url = link_html
+
+                    filing_date = ""
+                    if isinstance(row, dict):
+                        filing_date = row.get("date_filed") or row.get("date") or ""
+
+                    if member or pdf_url:
+                        filings.append({"member": member, "pdf_url": pdf_url, "filing_date": filing_date})
+        except json.JSONDecodeError:
+            log(f"  XHR response is not JSON: {captured['data'][:200]}")
+        except Exception as e:
+            log(f"  XHR parse error: {e}")
+
+    # Also look for results in the page HTML
+    results_html = page.content()
+    log(f"  Post-search page size: {len(results_html)} bytes")
+    if len(results_html) > 20000:  # Larger than the gate page
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(results_html, "html.parser")
+        log(f"  Post-search title: {(soup.find('title') or soup).get_text(strip=True)[:80]}")
+        tables = soup.find_all("table")
+        log(f"  Tables in results: {len(tables)}")
+        for t in tables[:2]:
+            rows = t.find_all("tr")
+            log(f"    Table has {len(rows)} rows")
+            for row in rows[:5]:
+                log(f"    Row: {row.get_text(separator='|', strip=True)[:120]!r}")
+        for a in soup.find_all("a", href=True)[:30]:
+            log(f"  Link: {a.get('href')!r}: {a.get_text(strip=True)[:60]!r}")
+
     return filings
 
 
-def _find_ptr_links_in_html(soup: BeautifulSoup, base_domain: str) -> list:
-    """
-    Find PTR PDF links in an HTML page.
-    Strict: only match links that look like actual eFD financial disclosure filings,
-    NOT general Senate website links (which may mention 'periodic' in an LDA context).
-    """
-    links = []
-    for a in soup.find_all("a", href=True):
-        href = a.get("href", "")
-        href_lower = href.lower()
-        text = a.get_text(strip=True)
+def search_senate_ptrs(from_date: datetime, to_date: datetime) -> list:
+    from_str = from_date.strftime("%m/%d/%Y")
+    to_str = to_date.strftime("%m/%d/%Y")
+    log(f"Launching Playwright (Chromium) for date range {from_str} → {to_str}")
 
-        # Must be a PDF
-        if not href_lower.endswith(".pdf"):
-            continue
-
-        # Must look like an eFD filing — not a lobbying/LDA doc
-        is_efd = any(seg in href_lower for seg in (
-            "disclosure.senate.gov",
-            "/financial/",
-            "/efd/",
-            "/ptr/",
-            "getreport",
-            "viewdocument",
-            "reportid",
-            "docid",
-            "filer",
-        ))
-        if not is_efd:
-            continue
-
-        full = href if href.startswith("http") else base_domain + href
-        links.append({"member": text or "Unknown", "pdf_url": full, "filing_date": ""})
-    return links
-
-
-def _probe_scripts_for_api(session: requests.Session, soup: BeautifulSoup, base_domain: str):
-    """Fetch external JS files and look for API URL hints."""
-    interesting = []
-    for script in soup.find_all("script", src=True):
-        src = script.get("src", "")
-        if not src:
-            continue
-        full_src = src if src.startswith("http") else base_domain + src
-        log(f"  Script src: {src}")
-        # Only fetch scripts that might contain API config
-        if any(kw in src.lower() for kw in ("app", "main", "bundle", "api", "config", "efd", "search")):
-            try:
-                r = session.get(full_src, timeout=10)
-                if r.status_code == 200:
-                    content = r.text
-                    # Look for API URL patterns
-                    urls = re.findall(r'["\'](https?://[^"\']*(?:api|search|efts|efd)[^"\']*)["\']', content)
-                    for u in urls[:10]:
-                        log(f"    ** API URL in script: {u}")
-                        interesting.append(u)
-            except Exception as e:
-                log(f"    Script fetch error: {e}")
-    return interesting
-
-
-def _accept_agreement(session: requests.Session) -> str:
-    """
-    efdsearch.senate.gov gates searches behind a prohibition_agreement POST form.
-    Accept it so the session cookie allows access to /search/report/data/.
-    Returns the CSRF token from cookie (needed as X-CSRFToken header for AJAX calls).
-    """
-    try:
-        r = session.get(EFDSEARCH + "/", timeout=15)
-        if r.status_code != 200:
-            log(f"  Agreement page returned {r.status_code}")
-            return ""
-        soup = BeautifulSoup(r.content, "html.parser")
-        # Get CSRF from form field
-        form_csrf = ""
-        for inp in soup.find_all("input"):
-            if inp.get("name") == "csrfmiddlewaretoken":
-                form_csrf = inp.get("value", "")
-                break
-        # Also log cookies we have so far
-        cookie_csrf = session.cookies.get("csrftoken", "")
-        log(f"  Form CSRF: {form_csrf[:20]}...  Cookie CSRF: {cookie_csrf[:20]}...")
-
-        # The form has a hidden field prohibition_agreement=1 and a checkbox (#agree_statement)
-        # that triggers submit. We send prohibition_agreement=1 (hidden field value).
-        post_data = {"csrfmiddlewaretoken": form_csrf, "prohibition_agreement": "1"}
-        log(f"  POSTing agreement: {list(post_data.keys())}")
-        post_resp = session.post(
-            EFDSEARCH + "/",
-            data=post_data,
-            headers={**HEADERS, "Referer": EFDSEARCH + "/", "Origin": EFDSEARCH},
-            timeout=15,
-            allow_redirects=True,
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
+        context = browser.new_context(
+            user_agent=HEADERS["User-Agent"],
+            locale="en-US",
+            viewport={"width": 1280, "height": 800},
         )
-        log(f"  Agreement POST → {post_resp.status_code}, URL: {post_resp.url}")
-        log(f"  Cookies after POST: {dict(session.cookies)}")
-
-        # CSRF token for AJAX calls comes from cookie, not form
-        csrf_cookie = session.cookies.get("csrftoken", form_csrf)
-        log(f"  CSRF cookie for AJAX: {csrf_cookie[:20]}...")
-
-        s = BeautifulSoup(post_resp.content, "html.parser")
-        title = s.find("title")
-        log(f"  Post-agreement page title: {title.get_text(strip=True) if title else 'N/A'}")
-        # Log search forms present AFTER agreement (should be search form, not agreement form)
-        for form in s.find_all("form"):
-            log(f"    Form action={form.get('action')!r} method={form.get('method')!r}")
-            for inp in form.find_all(["input", "select"]):
-                name = inp.get("name")
-                if name and name != "csrfmiddlewaretoken":
-                    log(f"      {inp.name} name={name!r} value={str(inp.get('value',''))[:60]!r}")
-        return csrf_cookie
-    except Exception as e:
-        log(f"  Agreement POST failed: {e}")
-        return ""
-
-
-def search_senate_ptrs(session: requests.Session, from_date: datetime, to_date: datetime) -> list:
-    from_str = from_date.strftime("%Y-%m-%d")
-    to_str = to_date.strftime("%Y-%m-%d")
-
-    # --- Step 0: Accept agreement gate on efdsearch ---
-    log("Accepting efdsearch prohibition agreement...")
-    csrf_token = _accept_agreement(session)
-
-    # --- Step 1: Probe the main eFD page ---
-    for probe_url in [BASE + "/", EFDSEARCH + "/search/home/"]:
-        log(f"Probing {probe_url} ...")
+        page = context.new_page()
         try:
-            resp = session.get(probe_url, timeout=30)
-            log(f"  Status: {resp.status_code}  Size: {len(resp.content)} bytes  CT: {resp.headers.get('Content-Type','?')[:60]}")
-            if resp.status_code != 200:
-                continue
+            filings = _intercept_search_response(page, from_str, to_str)
+        finally:
+            browser.close()
 
-            soup = BeautifulSoup(resp.content, "html.parser")
-            title = soup.find("title")
-            log(f"  Page title: {title.get_text(strip=True) if title else 'N/A'}")
-
-            for form in soup.find_all("form"):
-                log(f"  Form action={form.get('action')!r} method={form.get('method','get')!r}")
-                for f in form.find_all(["input", "select"]):
-                    log(f"    {f.name} name={f.get('name')!r} value={str(f.get('value',''))[:80]!r}")
-
-            all_links = [(a.get("href", ""), a.get_text(strip=True)) for a in soup.find_all("a", href=True)]
-            log(f"  Links ({len(all_links)} total, showing first 60):")
-            for href, text in all_links[:60]:
-                log(f"    {href!r}: {text[:80]!r}")
-
-            # Inline scripts mentioning api / efts / efd
-            for s in soup.find_all("script", src=False):
-                t = (s.string or "")
-                if any(kw in t.lower() for kw in ("api", "efts", "efd", "search")) and len(t) < 10000:
-                    log(f"  Inline script snippet: {t[:600]!r}")
-
-            # External scripts
-            discovered_apis = _probe_scripts_for_api(session, soup, BASE)
-            if discovered_apis:
-                log(f"  Discovered {len(discovered_apis)} API URLs from scripts")
-
-        except Exception as e:
-            log(f"  Probe failed: {e}")
-
-    # --- Step 2: Try JSON API endpoints ---
-    # efdsearch.senate.gov is a Django app (CSRF, DataTables).
-    # PTR report type is commonly "11" or "ptr" in Senate eFD systems.
-    api_urls = [
-        # DataTables server-side: most likely endpoint pattern for Django eFD
-        f"{EFDSEARCH}/search/report/data/?report_types[]=11&dateRange=custom&fromDate={from_str}&toDate={to_str}&draw=1&start=0&length=100",
-        f"{EFDSEARCH}/search/report/data/?report_types[]=ptr&dateRange=custom&fromDate={from_str}&toDate={to_str}&draw=1&start=0&length=100",
-        f"{EFDSEARCH}/search/report/data/?report_types[]=PTR&dateRange=custom&fromDate={from_str}&toDate={to_str}&draw=1&start=0&length=100",
-        # Without DataTables params
-        f"{EFDSEARCH}/search/report/data/?report_types[]=11&dateRange=custom&fromDate={from_str}&toDate={to_str}",
-        f"{EFDSEARCH}/search/results/?report_types[]=11&dateRange=custom&fromDate={from_str}&toDate={to_str}",
-        f"{EFDSEARCH}/search/results/?report_types[]=PTR&dateRange=custom&fromDate={from_str}&toDate={to_str}",
-        # Alternate param names
-        f"{EFDSEARCH}/search/report/data/?reportType=PTR&fromDate={from_str}&toDate={to_str}&draw=1&start=0&length=100",
-        f"{EFDSEARCH}/api/search/?report_types=PTR&dateRange=custom&fromDate={from_str}&toDate={to_str}",
-    ]
-
-    # --- Step 2: Get the search form from efdsearch and submit it as a browser form ---
-    # Akamai WAF blocks XHR/DataTables AJAX calls (503). Use the HTML form instead.
-    log("Fetching efdsearch search form...")
-    search_form_url = f"{EFDSEARCH}/search/home/"
-    try:
-        r = session.get(search_form_url, headers=HEADERS, timeout=15)
-        log(f"  {search_form_url}: {r.status_code}  size={len(r.content)}")
-        s = BeautifulSoup(r.content, "html.parser")
-        log(f"  Title: {(s.find('title') or s).get_text(strip=True)[:80]}")
-
-        # Log ALL forms and their fields
-        for form in s.find_all("form"):
-            action = form.get("action", "")
-            log(f"  Form action={action!r} method={form.get('method','get')!r}")
-            for inp in form.find_all(["input", "select", "textarea"]):
-                log(f"    {inp.name} type={inp.get('type','text')!r} name={inp.get('name')!r} value={str(inp.get('value',''))[:80]!r}")
-
-        # Log ALL links to see if there are direct PTR links
-        for a in s.find_all("a", href=True)[:40]:
-            log(f"  Link: {a.get('href')!r}: {a.get_text(strip=True)[:60]!r}")
-
-        # Log inline scripts (might contain API calls or URL config)
-        for sc in s.find_all("script", src=False):
-            t = (sc.string or "")
-            if len(t) > 20:
-                log(f"  Inline script ({len(t)} chars): {t[:1000]!r}")
-
-    except Exception as e:
-        log(f"  Search form fetch failed: {e}")
-
-    # --- Step 3: Try submitting a browser-style form POST (no AJAX headers) ---
-    log("Trying browser-style form POST for PTR search...")
-    browser_headers = {
-        **HEADERS,
-        "Referer": search_form_url,
-        "Origin": EFDSEARCH,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    }
-    # Try common form field names for PTR date-range search
-    for form_params in [
-        {"report_types[]": "11", "dateRange": "custom", "fromDate": from_str, "toDate": to_str},
-        {"report_types": "PTR", "dateRange": "custom", "fromDate": from_str, "toDate": to_str},
-        {"filing_type": "ptr", "from_date": from_str, "to_date": to_str},
-        {"q": "", "report_types[]": "11", "dateRange": "custom", "fromDate": from_str, "toDate": to_str},
-    ]:
-        for endpoint in [f"{EFDSEARCH}/search/home/", f"{EFDSEARCH}/search/"]:
-            try:
-                form_params["csrfmiddlewaretoken"] = csrf_token
-                rp = session.post(endpoint, data=form_params, headers=browser_headers, timeout=20)
-                ct = rp.headers.get("Content-Type", "")
-                log(f"  POST {endpoint} {list(form_params.keys())}: {rp.status_code}  CT={ct[:50]}")
-                if rp.status_code == 200 and "json" not in ct:
-                    sp = BeautifulSoup(rp.content, "html.parser")
-                    log(f"    Title: {(sp.find('title') or sp).get_text(strip=True)[:80]}")
-                    # Look for result tables or PTR links
-                    tables = sp.find_all("table")
-                    log(f"    Tables: {len(tables)}")
-                    for t in tables[:2]:
-                        rows = t.find_all("tr")
-                        log(f"    Table rows: {len(rows)}")
-                        for row in rows[:5]:
-                            log(f"      Row: {row.get_text(separator='|', strip=True)[:120]!r}")
-                    pdf_links = _find_ptr_links_in_html(sp, EFDSEARCH)
-                    if pdf_links:
-                        log(f"    SUCCESS: {len(pdf_links)} PTR links via form POST")
-                        return pdf_links
-                    # Log any links
-                    for a in sp.find_all("a", href=True)[:20]:
-                        log(f"    Link: {a.get('href')!r}: {a.get_text(strip=True)[:60]!r}")
-                elif rp.status_code == 200 and "json" in ct:
-                    data = rp.json()
-                    log(f"    JSON: {json.dumps(data)[:600]}")
-                    filings = _extract_filings_from_json(data)
-                    if filings:
-                        return filings
-                elif rp.status_code not in (200,):
-                    log(f"    Body: {rp.text[:200]}")
-            except Exception as e:
-                log(f"  Form POST error: {e}")
-
-    # --- Step 3: Try HTML-based eFD search pages ---
-    # --- Step 3: Fetch efdsearch scripts to find the actual DataTables AJAX URL ---
-    log("Probing efdsearch scripts for AJAX endpoint...")
-    try:
-        r = session.get(f"{EFDSEARCH}/search/home/", timeout=15)
-        if r.status_code == 200:
-            soup_efd = BeautifulSoup(r.content, "html.parser")
-            log(f"  efdsearch/search/home title: {(soup_efd.find('title') or soup_efd).get_text(strip=True)[:80]}")
-            for a in soup_efd.find_all("a", href=True)[:30]:
-                log(f"  Link: {a.get('href')!r}: {a.get_text(strip=True)[:60]!r}")
-            for form in soup_efd.find_all("form"):
-                log(f"  Form action={form.get('action')!r} method={form.get('method','get')!r}")
-                for inp in form.find_all(["input", "select", "textarea"]):
-                    log(f"    {inp.name} name={inp.get('name')!r} value={str(inp.get('value',''))[:80]!r}")
-            # Inline scripts (DataTables ajax config will be here)
-            for s in soup_efd.find_all("script", src=False):
-                t = (s.string or "")
-                if len(t) > 20:
-                    log(f"  Inline script: {t[:800]!r}")
-            # External scripts
-            _probe_scripts_for_api(session, soup_efd, EFDSEARCH)
-    except Exception as e:
-        log(f"  efdsearch probe error: {e}")
-
-    log("WARNING: No PTR filings found. Review logs above for site structure clues.")
-    return []
+    log(f"Found {len(filings)} filings via Playwright")
+    return filings
 
 
 # ---------------------------------------------------------------------------
 # Download and parse filing PDFs
 # ---------------------------------------------------------------------------
 
-def resolve_pdf_url(session: requests.Session, filing: dict) -> str:
-    pdf_url = filing.get("pdf_url", "")
-    if pdf_url and pdf_url.endswith(".pdf"):
-        return pdf_url
-
-    detail_url = filing.get("pdf_url") or filing.get("detail_url", "")
-    if detail_url and not detail_url.endswith(".pdf"):
-        if not detail_url.startswith("http"):
-            detail_url = BASE + detail_url
-        try:
-            r = session.get(detail_url, timeout=15)
-            if r.status_code == 200:
-                s = BeautifulSoup(r.content, "html.parser")
-                for a in s.find_all("a", href=True):
-                    href = a.get("href", "")
-                    if href.endswith(".pdf"):
-                        return href if href.startswith("http") else BASE + href
-        except Exception as e:
-            log(f"  Detail page lookup failed: {e}")
-
-    return pdf_url
-
-
-def download_and_parse(session: requests.Session, filings: list) -> list:
+def download_and_parse(filings: list) -> list:
+    session = requests.Session()
+    session.headers.update(HEADERS)
     all_trades = []
+
     for filing in filings[:MAX_PDFS]:
         member = filing.get("member", "Unknown")
         filing_date = filing.get("filing_date", "")
-        pdf_url = resolve_pdf_url(session, filing)
+        pdf_url = filing.get("pdf_url", "")
 
         if not pdf_url:
-            log(f"  No PDF URL for {member}, skipping. Raw: {filing.get('raw', '')}")
+            log(f"  No PDF URL for {member}")
             continue
 
         if not pdf_url.startswith("http"):
-            pdf_url = BASE + pdf_url
+            pdf_url = EFDSEARCH + pdf_url
 
         try:
             r = session.get(pdf_url, timeout=30)
@@ -558,11 +405,8 @@ def main():
         except Exception:
             pass
 
-    session = requests.Session()
-    session.headers.update(HEADERS)
-
-    filings = search_senate_ptrs(session, cutoff, now)
-    new_trades = download_and_parse(session, filings) if filings else []
+    filings = search_senate_ptrs(cutoff, now)
+    new_trades = download_and_parse(filings) if filings else []
 
     log(f"Found {len(new_trades)} new trades from {len(filings)} filings")
 
