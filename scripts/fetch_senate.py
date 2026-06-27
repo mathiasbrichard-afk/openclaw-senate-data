@@ -280,22 +280,10 @@ def _accept_agreement(session: requests.Session) -> str:
         cookie_csrf = session.cookies.get("csrftoken", "")
         log(f"  Form CSRF: {form_csrf[:20]}...  Cookie CSRF: {cookie_csrf[:20]}...")
 
-        # Collect ALL form fields (including checkboxes) to submit
-        post_data = {"csrfmiddlewaretoken": form_csrf}
-        for inp in soup.find_all("input"):
-            name = inp.get("name")
-            if not name or name == "csrfmiddlewaretoken":
-                continue
-            itype = inp.get("type", "text").lower()
-            if itype == "checkbox":
-                # Include checkbox as 'on' to simulate it being checked
-                post_data[name] = "on"
-                log(f"  Including checkbox: {name}=on")
-            else:
-                post_data[name] = inp.get("value", "")
-                log(f"  Including field: {name}={str(inp.get('value',''))[:30]!r}")
-
-        log(f"  POSTing agreement with fields: {list(post_data.keys())}")
+        # The form has a hidden field prohibition_agreement=1 and a checkbox (#agree_statement)
+        # that triggers submit. We send prohibition_agreement=1 (hidden field value).
+        post_data = {"csrfmiddlewaretoken": form_csrf, "prohibition_agreement": "1"}
+        log(f"  POSTing agreement: {list(post_data.keys())}")
         post_resp = session.post(
             EFDSEARCH + "/",
             data=post_data,
@@ -388,50 +376,85 @@ def search_senate_ptrs(session: requests.Session, from_date: datetime, to_date: 
         f"{EFDSEARCH}/api/search/?report_types=PTR&dateRange=custom&fromDate={from_str}&toDate={to_str}",
     ]
 
-    ajax_headers = {
+    # --- Step 2: Get the search form from efdsearch and submit it as a browser form ---
+    # Akamai WAF blocks XHR/DataTables AJAX calls (503). Use the HTML form instead.
+    log("Fetching efdsearch search form...")
+    search_form_url = f"{EFDSEARCH}/search/home/"
+    try:
+        r = session.get(search_form_url, headers=HEADERS, timeout=15)
+        log(f"  {search_form_url}: {r.status_code}  size={len(r.content)}")
+        s = BeautifulSoup(r.content, "html.parser")
+        log(f"  Title: {(s.find('title') or s).get_text(strip=True)[:80]}")
+
+        # Log ALL forms and their fields
+        for form in s.find_all("form"):
+            action = form.get("action", "")
+            log(f"  Form action={action!r} method={form.get('method','get')!r}")
+            for inp in form.find_all(["input", "select", "textarea"]):
+                log(f"    {inp.name} type={inp.get('type','text')!r} name={inp.get('name')!r} value={str(inp.get('value',''))[:80]!r}")
+
+        # Log ALL links to see if there are direct PTR links
+        for a in s.find_all("a", href=True)[:40]:
+            log(f"  Link: {a.get('href')!r}: {a.get_text(strip=True)[:60]!r}")
+
+        # Log inline scripts (might contain API calls or URL config)
+        for sc in s.find_all("script", src=False):
+            t = (sc.string or "")
+            if len(t) > 20:
+                log(f"  Inline script ({len(t)} chars): {t[:1000]!r}")
+
+    except Exception as e:
+        log(f"  Search form fetch failed: {e}")
+
+    # --- Step 3: Try submitting a browser-style form POST (no AJAX headers) ---
+    log("Trying browser-style form POST for PTR search...")
+    browser_headers = {
         **HEADERS,
-        "Accept": "application/json, text/javascript, */*; q=0.01",
-        "X-Requested-With": "XMLHttpRequest",
-        "Referer": f"{EFDSEARCH}/search/home/",
+        "Referer": search_form_url,
+        "Origin": EFDSEARCH,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
-    if csrf_token:
-        ajax_headers["X-CSRFToken"] = csrf_token
-
-    for url in api_urls:
-        try:
-            r = session.get(url, headers=ajax_headers, timeout=15)
-            ct = r.headers.get("Content-Type", "")
-            log(f"  {url}: {r.status_code}  CT={ct[:60]}")
-            if r.status_code in (403, 503):
-                log(f"    Error body (first 600): {r.text[:600]}")
-                # Try POST to the same endpoint (some Django views are POST-only)
-                p = session.post(url, data={"csrfmiddlewaretoken": csrf_token}, headers=ajax_headers, timeout=15)
-                log(f"    POST attempt → {p.status_code}  body: {p.text[:400]}")
-
-            if r.status_code != 200:
-                continue
-
-            if "json" in ct:
-                data = r.json()
-                log(f"    JSON preview: {json.dumps(data)[:800]}")
-                filings = _extract_filings_from_json(data)
-                if filings:
-                    log(f"    SUCCESS: {len(filings)} filings via JSON at {url}")
-                    return filings
-            else:
-                s = BeautifulSoup(r.content, "html.parser")
-                log(f"    HTML title: {(s.find('title') or s).get_text(strip=True)[:80]}")
-                # Log first 30 links to understand what page this is
-                for a in s.find_all("a", href=True)[:30]:
-                    log(f"    Link: {a.get('href')!r}: {a.get_text(strip=True)[:60]!r}")
-                # Try strict eFD-link matching
-                links = _find_ptr_links_in_html(s, BASE)
-                if links:
-                    log(f"    SUCCESS: {len(links)} PTR links in HTML at {url}")
-                    return links
-
-        except Exception as e:
-            log(f"  Error probing {url}: {e}")
+    # Try common form field names for PTR date-range search
+    for form_params in [
+        {"report_types[]": "11", "dateRange": "custom", "fromDate": from_str, "toDate": to_str},
+        {"report_types": "PTR", "dateRange": "custom", "fromDate": from_str, "toDate": to_str},
+        {"filing_type": "ptr", "from_date": from_str, "to_date": to_str},
+        {"q": "", "report_types[]": "11", "dateRange": "custom", "fromDate": from_str, "toDate": to_str},
+    ]:
+        for endpoint in [f"{EFDSEARCH}/search/home/", f"{EFDSEARCH}/search/"]:
+            try:
+                form_params["csrfmiddlewaretoken"] = csrf_token
+                rp = session.post(endpoint, data=form_params, headers=browser_headers, timeout=20)
+                ct = rp.headers.get("Content-Type", "")
+                log(f"  POST {endpoint} {list(form_params.keys())}: {rp.status_code}  CT={ct[:50]}")
+                if rp.status_code == 200 and "json" not in ct:
+                    sp = BeautifulSoup(rp.content, "html.parser")
+                    log(f"    Title: {(sp.find('title') or sp).get_text(strip=True)[:80]}")
+                    # Look for result tables or PTR links
+                    tables = sp.find_all("table")
+                    log(f"    Tables: {len(tables)}")
+                    for t in tables[:2]:
+                        rows = t.find_all("tr")
+                        log(f"    Table rows: {len(rows)}")
+                        for row in rows[:5]:
+                            log(f"      Row: {row.get_text(separator='|', strip=True)[:120]!r}")
+                    pdf_links = _find_ptr_links_in_html(sp, EFDSEARCH)
+                    if pdf_links:
+                        log(f"    SUCCESS: {len(pdf_links)} PTR links via form POST")
+                        return pdf_links
+                    # Log any links
+                    for a in sp.find_all("a", href=True)[:20]:
+                        log(f"    Link: {a.get('href')!r}: {a.get_text(strip=True)[:60]!r}")
+                elif rp.status_code == 200 and "json" in ct:
+                    data = rp.json()
+                    log(f"    JSON: {json.dumps(data)[:600]}")
+                    filings = _extract_filings_from_json(data)
+                    if filings:
+                        return filings
+                elif rp.status_code not in (200,):
+                    log(f"    Body: {rp.text[:200]}")
+            except Exception as e:
+                log(f"  Form POST error: {e}")
 
     # --- Step 3: Try HTML-based eFD search pages ---
     # --- Step 3: Fetch efdsearch scripts to find the actual DataTables AJAX URL ---
