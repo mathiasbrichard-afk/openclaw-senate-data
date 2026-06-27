@@ -280,9 +280,25 @@ def _accept_agreement(session: requests.Session) -> str:
         cookie_csrf = session.cookies.get("csrftoken", "")
         log(f"  Form CSRF: {form_csrf[:20]}...  Cookie CSRF: {cookie_csrf[:20]}...")
 
+        # Collect ALL form fields (including checkboxes) to submit
+        post_data = {"csrfmiddlewaretoken": form_csrf}
+        for inp in soup.find_all("input"):
+            name = inp.get("name")
+            if not name or name == "csrfmiddlewaretoken":
+                continue
+            itype = inp.get("type", "text").lower()
+            if itype == "checkbox":
+                # Include checkbox as 'on' to simulate it being checked
+                post_data[name] = "on"
+                log(f"  Including checkbox: {name}=on")
+            else:
+                post_data[name] = inp.get("value", "")
+                log(f"  Including field: {name}={str(inp.get('value',''))[:30]!r}")
+
+        log(f"  POSTing agreement with fields: {list(post_data.keys())}")
         post_resp = session.post(
             EFDSEARCH + "/",
-            data={"prohibition_agreement": "1", "csrfmiddlewaretoken": form_csrf},
+            data=post_data,
             headers={**HEADERS, "Referer": EFDSEARCH + "/", "Origin": EFDSEARCH},
             timeout=15,
             allow_redirects=True,
@@ -297,11 +313,13 @@ def _accept_agreement(session: requests.Session) -> str:
         s = BeautifulSoup(post_resp.content, "html.parser")
         title = s.find("title")
         log(f"  Post-agreement page title: {title.get_text(strip=True) if title else 'N/A'}")
+        # Log search forms present AFTER agreement (should be search form, not agreement form)
         for form in s.find_all("form"):
-            log(f"    Form action={form.get('action')!r}")
+            log(f"    Form action={form.get('action')!r} method={form.get('method')!r}")
             for inp in form.find_all(["input", "select"]):
-                if inp.get("name") not in ("csrfmiddlewaretoken",):
-                    log(f"      {inp.name} name={inp.get('name')!r} value={str(inp.get('value',''))[:60]!r}")
+                name = inp.get("name")
+                if name and name != "csrfmiddlewaretoken":
+                    log(f"      {inp.name} name={name!r} value={str(inp.get('value',''))[:60]!r}")
         return csrf_cookie
     except Exception as e:
         log(f"  Agreement POST failed: {e}")
@@ -385,7 +403,10 @@ def search_senate_ptrs(session: requests.Session, from_date: datetime, to_date: 
             ct = r.headers.get("Content-Type", "")
             log(f"  {url}: {r.status_code}  CT={ct[:60]}")
             if r.status_code in (403, 503):
-                log(f"    Error body: {r.text[:400]}")
+                log(f"    Error body (first 600): {r.text[:600]}")
+                # Try POST to the same endpoint (some Django views are POST-only)
+                p = session.post(url, data={"csrfmiddlewaretoken": csrf_token}, headers=ajax_headers, timeout=15)
+                log(f"    POST attempt → {p.status_code}  body: {p.text[:400]}")
 
             if r.status_code != 200:
                 continue
