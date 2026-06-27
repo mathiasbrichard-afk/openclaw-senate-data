@@ -330,13 +330,15 @@ def _intercept_search_response(page, from_str: str, to_str: str) -> list:
 def _parse_ptr_transactions_from_html(html: str, member: str, filing_date: str) -> list:
     """
     Parse electronic PTR transaction data from eFD rendered HTML.
-    Electronic filings store trade data in a JS-rendered table, not a PDF.
+
+    eFD table columns (confirmed from live data):
+      [0:'#', 1:'Transaction Date', 2:'Owner', 3:'Ticker', 4:'Asset Name',
+       5:'Asset Type', 6:'Type', 7:'Amount', 8:'Comment']
     """
     from bs4 import BeautifulSoup
     trades = []
     soup = BeautifulSoup(html, "html.parser")
 
-    # Log the page for debugging
     title = soup.find("title")
     log(f"    PTR HTML title: {title.get_text(strip=True) if title else 'N/A'}")
     tables = soup.find_all("table")
@@ -344,64 +346,59 @@ def _parse_ptr_transactions_from_html(html: str, member: str, filing_date: str) 
     for i, t in enumerate(tables[:3]):
         rows = t.find_all("tr")
         log(f"    Table {i}: {len(rows)} rows")
-        for row in rows[:5]:
+        for row in rows[:3]:
             log(f"      {row.get_text(separator='|', strip=True)[:120]!r}")
 
-    # Parse transaction rows — eFD typically has columns:
-    # Asset | Asset Type | Transaction Type | Date | Amount | Comment
     for table in tables:
         header_row = table.find("tr")
         if not header_row:
             continue
         headers = [th.get_text(strip=True).lower() for th in header_row.find_all(["th", "td"])]
-        log(f"    Headers: {headers[:8]}")
+        log(f"    Headers: {headers}")
 
-        # Check if this looks like a transactions table
-        if not any(h in str(headers) for h in ["asset", "transaction", "amount", "date"]):
+        # Must match the eFD electronic PTR table structure
+        if not ("transaction date" in headers and "ticker" in headers and "amount" in headers):
             continue
 
-        for row in table.find_all("tr")[1:]:  # skip header
+        for row in table.find_all("tr")[1:]:
             cells = [td.get_text(strip=True) for td in row.find_all("td")]
-            if len(cells) < 4:
+            if len(cells) < 7:
                 continue
-            log(f"    Row: {cells[:6]}")
 
-            # Try to map cells to trade fields
-            # Typical eFD order: [owner, asset_name, asset_type, tx_type, date, notif_date, amount, cap_gains]
-            if len(cells) >= 6:
-                asset_raw = cells[1] if len(cells) > 1 else ""
-                tx_type = cells[3] if len(cells) > 3 else ""
-                date_str = cells[4] if len(cells) > 4 else ""
-                amount_raw = cells[6] if len(cells) > 6 else ""
+            # Column mapping: [#, date, owner, ticker, asset_name, asset_type, type, amount, comment]
+            date_str = cells[1]
+            owner    = cells[2]
+            ticker   = cells[3]   # plain ticker: 'SBUX', 'NVDA', etc.
+            asset    = cells[4]
+            tx_type  = cells[6]
+            amount_raw = cells[7] if len(cells) > 7 else ""
 
-                # Parse date
-                tx_date = None
-                for fmt in ["%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y"]:
-                    try:
-                        tx_date = datetime.strptime(date_str, fmt)
-                        break
-                    except ValueError:
-                        continue
+            # Accept only valid exchange tickers (1-5 uppercase letters)
+            if not ticker or not re.match(r'^[A-Z]{1,5}$', ticker):
+                continue
 
-                if not tx_date:
+            tx_date = None
+            for fmt in ["%m/%d/%Y", "%Y-%m-%d"]:
+                try:
+                    tx_date = datetime.strptime(date_str, fmt)
+                    break
+                except ValueError:
                     continue
+            if not tx_date:
+                continue
 
-                ticker = _extract_ticker(asset_raw + " " + (cells[2] if len(cells) > 2 else ""))
-                if ticker == "N/A":
-                    continue  # Skip non-stock assets
-
-                trades.append({
-                    "member": member,
-                    "chamber": "Senate",
-                    "owner": cells[0] if cells else "Member",
-                    "asset": _clean_asset(asset_raw),
-                    "ticker": ticker,
-                    "type": _normalize_type(tx_type),
-                    "date": tx_date.strftime("%Y-%m-%d"),
-                    "filing_date": filing_date,
-                    "amount_raw": amount_raw,
-                    "amount_lower": _amount_lower(amount_raw),
-                })
+            trades.append({
+                "member": member,
+                "chamber": "Senate",
+                "owner": owner,
+                "asset": asset,
+                "ticker": ticker,
+                "type": _normalize_type(tx_type),
+                "date": tx_date.strftime("%Y-%m-%d"),
+                "filing_date": filing_date,
+                "amount_raw": amount_raw,
+                "amount_lower": _amount_lower(amount_raw),
+            })
 
     return trades
 
