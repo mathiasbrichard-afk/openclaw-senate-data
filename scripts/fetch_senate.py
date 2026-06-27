@@ -182,20 +182,32 @@ def _intercept_search_response(page, from_str: str, to_str: str) -> list:
         checkbox = page.locator("#agree_statement")
         if checkbox.count() > 0:
             log("  Clicking agreement checkbox...")
-            checkbox.check()
-            page.wait_for_load_state("networkidle", timeout=10000)
-            log(f"  After agreement: {page.title()}")
+            with page.expect_navigation(wait_until="networkidle", timeout=15000):
+                checkbox.check()
+            log(f"  After agreement URL: {page.url}  title: {page.title()}")
         else:
             log("  No agreement checkbox found — may already be agreed")
     except PWTimeout:
-        log("  Agreement checkbox timeout — continuing")
+        log(f"  Agreement navigation timeout — current URL: {page.url}")
     except Exception as e:
         log(f"  Agreement checkbox error: {e}")
 
-    # Navigate to the search page
-    log(f"  Navigating to {EFDSEARCH}/search/home/")
-    page.goto(EFDSEARCH + "/search/home/", wait_until="networkidle", timeout=30000)
-    log(f"  Search page title: {page.title()}")
+    # Navigate to search page only if not already there
+    current_url = page.url
+    log(f"  Current URL after agreement: {current_url}")
+    if "/search/home/" not in current_url and "/search/" not in current_url:
+        log(f"  Navigating to {EFDSEARCH}/search/home/")
+        try:
+            page.goto(EFDSEARCH + "/search/home/", wait_until="networkidle", timeout=30000)
+        except Exception as e:
+            log(f"  goto /search/home/ error: {e}")
+    else:
+        log("  Already on search page, waiting for networkidle...")
+        try:
+            page.wait_for_load_state("networkidle", timeout=15000)
+        except PWTimeout:
+            pass
+    log(f"  Search page title: {page.title()}  URL: {page.url}")
 
     # Log the page content to understand the search form
     page_content = page.content()
