@@ -152,22 +152,23 @@ def parse_ptr_pdf(pdf_bytes: bytes, member_name: str, filing_date: str = "") -> 
 
 def _intercept_search_response(page, from_str: str, to_str: str) -> list:
     """
-    Use Playwright to navigate efdsearch, accept the agreement, submit a PTR
-    date-range search, and capture the XHR response via network interception.
-    Returns a list of filing dicts.
+    Use Playwright to navigate efdsearch, accept agreement, filter by PTR + date range,
+    capture the XHR response, and return filing dicts with detail page URLs.
+
+    Row format from DataTables: [first_name, last_name, affiliation, link_html, date_filed]
+    The link_html contains a detail view URL like /search/view/ptr/{UUID}/
     """
     filings = []
-    captured = {}
+    # We'll collect ALL XHR hits; the last one after submit is the filtered result
+    xhrs = []
 
     def handle_response(response):
         url = response.url
         if "/search/report/data/" in url:
-            log(f"  Captured XHR: {url[:100]}  status={response.status}")
+            log(f"  XHR hit: {url[:100]}  status={response.status}")
             try:
                 body = response.body()
-                captured["data"] = body
-                captured["status"] = response.status
-                captured["url"] = url
+                xhrs.append({"data": body, "status": response.status, "url": url})
             except Exception as e:
                 log(f"  Failed to read XHR body: {e}")
 
@@ -177,7 +178,7 @@ def _intercept_search_response(page, from_str: str, to_str: str) -> list:
     page.goto(EFDSEARCH + "/", wait_until="networkidle", timeout=30000)
     log(f"  Page title: {page.title()}")
 
-    # Accept the prohibition agreement (click the checkbox)
+    # Accept the prohibition agreement
     try:
         checkbox = page.locator("#agree_statement")
         if checkbox.count() > 0:
@@ -195,72 +196,70 @@ def _intercept_search_response(page, from_str: str, to_str: str) -> list:
     # Navigate to search page only if not already there
     current_url = page.url
     log(f"  Current URL after agreement: {current_url}")
-    if "/search/home/" not in current_url and "/search/" not in current_url:
-        log(f"  Navigating to {EFDSEARCH}/search/home/")
+    if "/search/" not in current_url:
         try:
             page.goto(EFDSEARCH + "/search/home/", wait_until="networkidle", timeout=30000)
         except Exception as e:
             log(f"  goto /search/home/ error: {e}")
     else:
-        log("  Already on search page, waiting for networkidle...")
         try:
-            page.wait_for_load_state("networkidle", timeout=15000)
+            page.wait_for_load_state("networkidle", timeout=10000)
         except PWTimeout:
             pass
-    log(f"  Search page title: {page.title()}  URL: {page.url}")
+    log(f"  Search page: {page.title()}  URL: {page.url}")
 
-    # Log the page content to understand the search form
-    page_content = page.content()
-    log(f"  Page content size: {len(page_content)} bytes")
-
-    # Look for form fields
+    # Log form inputs
     inputs = page.locator("input, select").all()
-    log(f"  Found {len(inputs)} form inputs on search page")
-    for inp in inputs[:20]:
+    log(f"  Found {len(inputs)} form inputs")
+    for inp in inputs[:25]:
         try:
             name = inp.get_attribute("name") or ""
             itype = inp.get_attribute("type") or "text"
             val = inp.get_attribute("value") or ""
-            log(f"    input name={name!r} type={itype!r} value={val[:40]!r}")
+            eid = inp.get_attribute("id") or ""
+            log(f"    input id={eid!r} name={name!r} type={itype!r} value={val[:40]!r}")
         except Exception:
             pass
 
-    # Try to set the date range and report type
+    # Clear previous XHR captures (page load default search)
+    xhrs.clear()
+
+    # Set filters
     try:
-        # Try common field selectors for date range
-        for date_from_sel in ["#fromDate", "[name='fromDate']", "[name='from_date']", "[name='dateFrom']"]:
-            loc = page.locator(date_from_sel)
+        # PTR report type: checkbox name='report_type' value='11'
+        ptr_cb = page.locator("input[name='report_type'][value='11']")
+        if ptr_cb.count() > 0:
+            log("  Checking PTR checkbox (report_type=11)...")
+            if not ptr_cb.is_checked():
+                ptr_cb.check()
+
+        # Uncheck any other report_type checkboxes that might be checked by default
+        for cb in page.locator("input[name='report_type']").all():
+            val = cb.get_attribute("value") or ""
+            if val != "11" and cb.is_checked():
+                log(f"  Unchecking report_type={val}")
+                cb.uncheck()
+
+        # Date range fields
+        for sel in ["#fromDate", "[name='fromDate']", "[name='from_date']"]:
+            loc = page.locator(sel)
             if loc.count() > 0:
-                log(f"  Setting fromDate via {date_from_sel}")
                 loc.fill(from_str)
+                log(f"  fromDate set to {from_str} via {sel}")
                 break
 
-        for date_to_sel in ["#toDate", "[name='toDate']", "[name='to_date']", "[name='dateTo']"]:
-            loc = page.locator(date_to_sel)
+        for sel in ["#toDate", "[name='toDate']", "[name='to_date']"]:
+            loc = page.locator(sel)
             if loc.count() > 0:
-                log(f"  Setting toDate via {date_to_sel}")
                 loc.fill(to_str)
+                log(f"  toDate set to {to_str} via {sel}")
                 break
 
-        # Select PTR report type
-        for ptr_sel in [
-            "select[name='report_types[]']",
-            "select[name='report_types']",
-            "select[name='reportType']",
-            "#report_types",
-        ]:
-            loc = page.locator(ptr_sel)
-            if loc.count() > 0:
-                log(f"  Selecting PTR via {ptr_sel}")
-                loc.select_option(label="Periodic Transaction Report")
-                break
-
-        # Click search button
+        # Submit search
         for btn_sel in [
+            "#btnSearch",
             "button[type='submit']",
             "input[type='submit']",
-            "#btnSearch",
-            ".btn-search",
             "button:has-text('Search')",
             "input[value='Search']",
         ]:
@@ -269,6 +268,7 @@ def _intercept_search_response(page, from_str: str, to_str: str) -> list:
                 log(f"  Clicking search via {btn_sel}")
                 btn.first.click()
                 page.wait_for_load_state("networkidle", timeout=30000)
+                log(f"  After search: {page.title()}")
                 break
 
     except PWTimeout:
@@ -276,68 +276,54 @@ def _intercept_search_response(page, from_str: str, to_str: str) -> list:
     except Exception as e:
         log(f"  Search form error: {e}")
 
-    # Log what we captured
-    log(f"  Captured XHR data: {'yes' if 'data' in captured else 'no'}")
-    if "data" in captured:
-        try:
-            data = json.loads(captured["data"])
-            log(f"  XHR JSON preview: {json.dumps(data)[:800]}")
+    # Use the LAST captured XHR (filtered results after form submit)
+    log(f"  Total XHRs captured: {len(xhrs)}")
+    if not xhrs:
+        log("  No XHR captured — no filings found")
+        return filings
 
-            # Parse DataTables response format: {"data": [...], "recordsTotal": N}
-            rows = data.get("data", data.get("results", data.get("filings", [])))
-            if isinstance(rows, list):
-                log(f"  Rows in response: {len(rows)}")
-                for row in rows[:3]:
-                    log(f"    Sample row: {json.dumps(row)[:200]}")
-                for row in rows:
-                    if not isinstance(row, (list, dict)):
-                        continue
-                    # DataTables rows can be lists or dicts
-                    if isinstance(row, list):
-                        # Common column order: [name, office/state, filing_type, date, link]
-                        member = str(row[0]) if len(row) > 0 else "Unknown"
-                        link_html = str(row[-1]) if row else ""
-                    else:
-                        member = row.get("name") or row.get("filer_name") or "Unknown"
-                        link_html = row.get("link") or row.get("pdf_url") or ""
+    captured_data = xhrs[-1]["data"]
+    try:
+        data = json.loads(captured_data)
+        total = data.get("recordsTotal", "?")
+        log(f"  XHR recordsTotal={total}  preview: {json.dumps(data)[:400]}")
 
-                    # Extract PDF URL from link HTML if it's an HTML string
-                    pdf_url = ""
-                    if "<a" in link_html:
-                        m = re.search(r'href=["\']([^"\']+\.pdf)["\']', link_html, re.I)
-                        if m:
-                            pdf_url = m.group(1)
-                    elif link_html.endswith(".pdf"):
-                        pdf_url = link_html
+        rows = data.get("data", [])
+        log(f"  Parsing {len(rows)} rows...")
+        for i, row in enumerate(rows[:3]):
+            log(f"  Sample row {i}: {json.dumps(row)[:200]}")
 
-                    filing_date = ""
-                    if isinstance(row, dict):
-                        filing_date = row.get("date_filed") or row.get("date") or ""
+        for row in rows:
+            if not isinstance(row, list) or len(row) < 4:
+                continue
+            # Row: [first_name, last_name, affiliation, link_html, date_filed]
+            first = str(row[0]).strip()
+            last = str(row[1]).strip()
+            member = f"{first} {last}".strip()
+            link_html = str(row[3]) if len(row) > 3 else ""
+            filing_date = str(row[4]).strip() if len(row) > 4 else ""
 
-                    if member or pdf_url:
-                        filings.append({"member": member, "pdf_url": pdf_url, "filing_date": filing_date})
-        except json.JSONDecodeError:
-            log(f"  XHR response is not JSON: {captured['data'][:200]}")
-        except Exception as e:
-            log(f"  XHR parse error: {e}")
+            # Extract detail view URL (not a PDF — we'll follow it later)
+            detail_url = ""
+            m = re.search(r'href=["\']([^"\']+)["\']', link_html)
+            if m:
+                detail_url = m.group(1)
+                if not detail_url.startswith("http"):
+                    detail_url = EFDSEARCH + detail_url
 
-    # Also look for results in the page HTML
-    results_html = page.content()
-    log(f"  Post-search page size: {len(results_html)} bytes")
-    if len(results_html) > 20000:  # Larger than the gate page
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(results_html, "html.parser")
-        log(f"  Post-search title: {(soup.find('title') or soup).get_text(strip=True)[:80]}")
-        tables = soup.find_all("table")
-        log(f"  Tables in results: {len(tables)}")
-        for t in tables[:2]:
-            rows = t.find_all("tr")
-            log(f"    Table has {len(rows)} rows")
-            for row in rows[:5]:
-                log(f"    Row: {row.get_text(separator='|', strip=True)[:120]!r}")
-        for a in soup.find_all("a", href=True)[:30]:
-            log(f"  Link: {a.get('href')!r}: {a.get_text(strip=True)[:60]!r}")
+            filings.append({
+                "member": member,
+                "pdf_url": "",           # filled in download_and_parse
+                "detail_url": detail_url,
+                "filing_date": filing_date,
+            })
 
+    except json.JSONDecodeError:
+        log(f"  XHR not JSON: {captured_data[:200]}")
+    except Exception as e:
+        log(f"  XHR parse error: {e}")
+
+    log(f"  Returning {len(filings)} filing stubs (detail URLs to resolve)")
     return filings
 
 
@@ -367,6 +353,34 @@ def search_senate_ptrs(from_date: datetime, to_date: datetime) -> list:
 # Download and parse filing PDFs
 # ---------------------------------------------------------------------------
 
+def _resolve_pdf_from_detail(session: requests.Session, detail_url: str) -> str:
+    """
+    Follow a Senate eFD detail view URL to find the actual PDF download link.
+    Detail pages are at /search/view/{type}/{uuid}/ and contain a PDF link.
+    """
+    try:
+        r = session.get(detail_url, headers=HEADERS, timeout=15)
+        if r.status_code != 200:
+            log(f"  Detail page {detail_url}: {r.status_code}")
+            return ""
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(r.content, "html.parser")
+        # Look for PDF links
+        for a in soup.find_all("a", href=True):
+            href = a.get("href", "")
+            text = a.get_text(strip=True).lower()
+            if href.lower().endswith(".pdf") or "pdf" in text or "download" in text or "view" in text.lower():
+                full = href if href.startswith("http") else EFDSEARCH + href
+                if ".pdf" in full.lower() or "/view/" in full.lower():
+                    log(f"    PDF link: {full[:80]}")
+                    return full
+        # Log page content for debugging
+        log(f"  Detail page {detail_url}: no PDF link found. Links: {[a.get('href','')[:50] for a in soup.find_all('a', href=True)[:10]]}")
+    except Exception as e:
+        log(f"  Detail page error {detail_url}: {e}")
+    return ""
+
+
 def download_and_parse(filings: list) -> list:
     session = requests.Session()
     session.headers.update(HEADERS)
@@ -376,18 +390,42 @@ def download_and_parse(filings: list) -> list:
         member = filing.get("member", "Unknown")
         filing_date = filing.get("filing_date", "")
         pdf_url = filing.get("pdf_url", "")
+        detail_url = filing.get("detail_url", "")
+
+        # Resolve PDF URL from detail page if not already known
+        if not pdf_url and detail_url:
+            pdf_url = _resolve_pdf_from_detail(session, detail_url)
 
         if not pdf_url:
-            log(f"  No PDF URL for {member}")
+            # Try constructing PDF URL from detail URL pattern
+            # /search/view/ptr/{UUID}/ → try /search/view/ptr/{UUID}/print_annual_ptr/
+            if detail_url and "/search/view/" in detail_url:
+                for suffix in ["/print_annual_ptr/", "/print/", ".pdf"]:
+                    candidate = detail_url.rstrip("/") + suffix
+                    try:
+                        r = session.head(candidate, headers=HEADERS, timeout=10, allow_redirects=True)
+                        if r.status_code == 200:
+                            pdf_url = candidate
+                            log(f"  Constructed PDF URL: {pdf_url}")
+                            break
+                    except Exception:
+                        pass
+
+        if not pdf_url:
+            log(f"  No PDF for {member} (detail: {detail_url[:60]})")
             continue
 
         if not pdf_url.startswith("http"):
             pdf_url = EFDSEARCH + pdf_url
 
         try:
-            r = session.get(pdf_url, timeout=30)
+            r = session.get(pdf_url, headers=HEADERS, timeout=30)
             if r.status_code != 200:
                 log(f"  PDF {pdf_url}: {r.status_code}")
+                continue
+            ct = r.headers.get("Content-Type", "")
+            if "pdf" not in ct.lower() and not pdf_url.lower().endswith(".pdf"):
+                log(f"  Not a PDF ({ct}): {pdf_url[:80]}")
                 continue
             trades = parse_ptr_pdf(r.content, member, filing_date)
             log(f"  {member} ({filing_date}): {len(trades)} trades")
