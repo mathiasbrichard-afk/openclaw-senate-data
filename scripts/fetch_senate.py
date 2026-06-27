@@ -327,6 +327,97 @@ def _intercept_search_response(page, from_str: str, to_str: str) -> list:
     return filings
 
 
+def _resolve_pdfs_via_playwright(page, filing_stubs: list) -> list:
+    """
+    Navigate to each eFD detail page in the authenticated Playwright browser.
+    The detail page is a JS SPA — we intercept the PDF response from the
+    embedded PDF viewer (PDFObject/iframe). Falls back to HEAD-probing URL patterns.
+    Returns list of trade dicts.
+    """
+    all_trades = []
+
+    for filing in filing_stubs[:MAX_PDFS]:
+        member = filing.get("member", "Unknown")
+        filing_date = filing.get("filing_date", "")
+        detail_url = filing.get("detail_url", "")
+
+        if not detail_url:
+            continue
+
+        # Intercept PDF bytes from network during page navigation
+        captured_pdf = {}
+
+        def handle_pdf(response):
+            ct = response.headers.get("content-type", "")
+            url = response.url
+            if "pdf" in ct.lower() or url.lower().endswith(".pdf"):
+                log(f"    PDF response: {url[:80]}  CT={ct}")
+                try:
+                    captured_pdf["body"] = response.body()
+                    captured_pdf["url"] = url
+                except Exception as e:
+                    log(f"    Failed to capture PDF body: {e}")
+
+        page.on("response", handle_pdf)
+        try:
+            page.goto(detail_url, wait_until="networkidle", timeout=20000)
+        except Exception as e:
+            log(f"  Detail page nav error {detail_url}: {e}")
+        finally:
+            page.remove_listener("response", handle_pdf)
+
+        if "body" in captured_pdf:
+            trades = parse_ptr_pdf(captured_pdf["body"], member, filing_date)
+            log(f"  {member} ({filing_date}): {len(trades)} trades (from browser PDF)")
+            all_trades.extend(trades)
+            continue
+
+        # PDF not auto-loaded — look for PDF link in the rendered page
+        pdf_url = ""
+        try:
+            links = page.locator("a[href*='.pdf'], a[href*='/print'], a[href*='/download']").all()
+            for lnk in links[:5]:
+                href = lnk.get_attribute("href") or ""
+                if href:
+                    pdf_url = href if href.startswith("http") else EFDSEARCH + href
+                    log(f"  Found PDF link: {pdf_url[:80]}")
+                    break
+        except Exception:
+            pass
+
+        # Last resort: probe common URL patterns with HEAD requests
+        if not pdf_url and "/search/view/" in detail_url:
+            uuid_part = detail_url.rstrip("/").split("/")[-1]
+            for pattern in [
+                f"{EFDSEARCH}/search/view/ptr/{uuid_part}/print_annual_ptr/",
+                f"{EFDSEARCH}/search/view/ptr/{uuid_part}/print_ptr/",
+                f"{EFDSEARCH}/search/view/paper/{uuid_part}/print_annual_ptr/",
+            ]:
+                try:
+                    r = requests.head(pattern, headers=HEADERS, timeout=8, allow_redirects=True)
+                    if r.status_code == 200 and "pdf" in r.headers.get("content-type", ""):
+                        pdf_url = pattern
+                        log(f"  Probed PDF URL: {pdf_url}")
+                        break
+                except Exception:
+                    pass
+
+        if pdf_url:
+            try:
+                r = requests.get(pdf_url, headers=HEADERS, timeout=30)
+                if r.status_code == 200 and "pdf" in r.headers.get("content-type", ""):
+                    trades = parse_ptr_pdf(r.content, member, filing_date)
+                    log(f"  {member} ({filing_date}): {len(trades)} trades (from PDF URL)")
+                    all_trades.extend(trades)
+                    continue
+            except Exception as e:
+                log(f"  PDF fetch error: {e}")
+
+        log(f"  No PDF obtained for {member} ({filing_date}) — detail: {detail_url[-60:]}")
+
+    return all_trades
+
+
 def search_senate_ptrs(from_date: datetime, to_date: datetime) -> list:
     from_str = from_date.strftime("%m/%d/%Y")
     to_str = to_date.strftime("%m/%d/%Y")
@@ -341,99 +432,23 @@ def search_senate_ptrs(from_date: datetime, to_date: datetime) -> list:
         )
         page = context.new_page()
         try:
-            filings = _intercept_search_response(page, from_str, to_str)
+            filing_stubs = _intercept_search_response(page, from_str, to_str)
+            log(f"Resolving PDFs for {len(filing_stubs)} filings in browser session...")
+            all_trades = _resolve_pdfs_via_playwright(page, filing_stubs)
         finally:
             browser.close()
 
-    log(f"Found {len(filings)} filings via Playwright")
-    return filings
-
-
-# ---------------------------------------------------------------------------
-# Download and parse filing PDFs
-# ---------------------------------------------------------------------------
-
-def _resolve_pdf_from_detail(session: requests.Session, detail_url: str) -> str:
-    """
-    Follow a Senate eFD detail view URL to find the actual PDF download link.
-    Detail pages are at /search/view/{type}/{uuid}/ and contain a PDF link.
-    """
-    try:
-        r = session.get(detail_url, headers=HEADERS, timeout=15)
-        if r.status_code != 200:
-            log(f"  Detail page {detail_url}: {r.status_code}")
-            return ""
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(r.content, "html.parser")
-        # Look for PDF links
-        for a in soup.find_all("a", href=True):
-            href = a.get("href", "")
-            text = a.get_text(strip=True).lower()
-            if href.lower().endswith(".pdf") or "pdf" in text or "download" in text or "view" in text.lower():
-                full = href if href.startswith("http") else EFDSEARCH + href
-                if ".pdf" in full.lower() or "/view/" in full.lower():
-                    log(f"    PDF link: {full[:80]}")
-                    return full
-        # Log page content for debugging
-        log(f"  Detail page {detail_url}: no PDF link found. Links: {[a.get('href','')[:50] for a in soup.find_all('a', href=True)[:10]]}")
-    except Exception as e:
-        log(f"  Detail page error {detail_url}: {e}")
-    return ""
-
-
-def download_and_parse(filings: list) -> list:
-    session = requests.Session()
-    session.headers.update(HEADERS)
-    all_trades = []
-
-    for filing in filings[:MAX_PDFS]:
-        member = filing.get("member", "Unknown")
-        filing_date = filing.get("filing_date", "")
-        pdf_url = filing.get("pdf_url", "")
-        detail_url = filing.get("detail_url", "")
-
-        # Resolve PDF URL from detail page if not already known
-        if not pdf_url and detail_url:
-            pdf_url = _resolve_pdf_from_detail(session, detail_url)
-
-        if not pdf_url:
-            # Try constructing PDF URL from detail URL pattern
-            # /search/view/ptr/{UUID}/ → try /search/view/ptr/{UUID}/print_annual_ptr/
-            if detail_url and "/search/view/" in detail_url:
-                for suffix in ["/print_annual_ptr/", "/print/", ".pdf"]:
-                    candidate = detail_url.rstrip("/") + suffix
-                    try:
-                        r = session.head(candidate, headers=HEADERS, timeout=10, allow_redirects=True)
-                        if r.status_code == 200:
-                            pdf_url = candidate
-                            log(f"  Constructed PDF URL: {pdf_url}")
-                            break
-                    except Exception:
-                        pass
-
-        if not pdf_url:
-            log(f"  No PDF for {member} (detail: {detail_url[:60]})")
-            continue
-
-        if not pdf_url.startswith("http"):
-            pdf_url = EFDSEARCH + pdf_url
-
-        try:
-            r = session.get(pdf_url, headers=HEADERS, timeout=30)
-            if r.status_code != 200:
-                log(f"  PDF {pdf_url}: {r.status_code}")
-                continue
-            ct = r.headers.get("Content-Type", "")
-            if "pdf" not in ct.lower() and not pdf_url.lower().endswith(".pdf"):
-                log(f"  Not a PDF ({ct}): {pdf_url[:80]}")
-                continue
-            trades = parse_ptr_pdf(r.content, member, filing_date)
-            log(f"  {member} ({filing_date}): {len(trades)} trades")
-            all_trades.extend(trades)
-        except Exception as e:
-            log(f"  PDF error {pdf_url}: {e}")
-
+    log(f"Playwright session complete: {len(all_trades)} trades extracted")
     return all_trades
+
+
+# ---------------------------------------------------------------------------
+# download_and_parse is now handled inside Playwright session
+# ---------------------------------------------------------------------------
+
+def download_and_parse(trades: list) -> list:
+    # Trades are now returned directly from search_senate_ptrs
+    return trades
 
 
 # ---------------------------------------------------------------------------
