@@ -19,6 +19,8 @@ import requests
 from bs4 import BeautifulSoup
 
 BASE = "https://www.disclosure.senate.gov"
+# The old efts.senate.gov is NXDOMAIN; try efts2 (the likely replacement)
+EFTS2 = "https://efts2.senate.gov"
 OUTPUT = Path("data/senate_ptrs.json")
 LOOKBACK_DAYS = 90
 MAX_PDFS = 60
@@ -162,7 +164,6 @@ def _extract_filings_from_json(data) -> list:
             hits = data["hits"]
             items = hits.get("hits", hits) if isinstance(hits, dict) else hits
             items = [h.get("_source", h) for h in items]
-        # Paginated: {"results": [...]} or {"data": [...]}
         elif "results" in data:
             items = data["results"]
         elif "data" in data:
@@ -178,12 +179,11 @@ def _extract_filings_from_json(data) -> list:
     for item in items:
         if not isinstance(item, dict):
             continue
-        # Try common field name variants for member name
         member = (
-            item.get("name") or item.get("filer_name") or item.get("first_name", "") + " " + item.get("last_name", "")
+            item.get("name") or item.get("filer_name")
+            or (item.get("first_name", "") + " " + item.get("last_name", "")).strip()
             or "Unknown"
         ).strip()
-        # Try common field name variants for PDF URL
         pdf_url = (
             item.get("pdf_url") or item.get("document_url") or item.get("link")
             or item.get("url") or item.get("filing_url") or ""
@@ -196,157 +196,181 @@ def _extract_filings_from_json(data) -> list:
     return filings
 
 
-def _find_ptr_links_in_html(soup: BeautifulSoup, base: str) -> list:
-    """Find PTR PDF links in an HTML page."""
+def _find_ptr_links_in_html(soup: BeautifulSoup, base_domain: str) -> list:
+    """
+    Find PTR PDF links in an HTML page.
+    Strict: only match links that look like actual eFD financial disclosure filings,
+    NOT general Senate website links (which may mention 'periodic' in an LDA context).
+    """
     links = []
     for a in soup.find_all("a", href=True):
         href = a.get("href", "")
+        href_lower = href.lower()
         text = a.get_text(strip=True)
-        if href.lower().endswith(".pdf") or "ptr" in href.lower() or "periodic" in text.lower():
-            full = href if href.startswith("http") else base + href
-            links.append({"member": text or "Unknown", "pdf_url": full, "filing_date": ""})
+
+        # Must be a PDF
+        if not href_lower.endswith(".pdf"):
+            continue
+
+        # Must look like an eFD filing — not a lobbying/LDA doc
+        is_efd = any(seg in href_lower for seg in (
+            "disclosure.senate.gov",
+            "/financial/",
+            "/efd/",
+            "/ptr/",
+            "getreport",
+            "viewdocument",
+            "reportid",
+            "docid",
+            "filer",
+        ))
+        if not is_efd:
+            continue
+
+        full = href if href.startswith("http") else base_domain + href
+        links.append({"member": text or "Unknown", "pdf_url": full, "filing_date": ""})
     return links
 
 
+def _probe_scripts_for_api(session: requests.Session, soup: BeautifulSoup, base_domain: str):
+    """Fetch external JS files and look for API URL hints."""
+    interesting = []
+    for script in soup.find_all("script", src=True):
+        src = script.get("src", "")
+        if not src:
+            continue
+        full_src = src if src.startswith("http") else base_domain + src
+        log(f"  Script src: {src}")
+        # Only fetch scripts that might contain API config
+        if any(kw in src.lower() for kw in ("app", "main", "bundle", "api", "config", "efd", "search")):
+            try:
+                r = session.get(full_src, timeout=10)
+                if r.status_code == 200:
+                    content = r.text
+                    # Look for API URL patterns
+                    urls = re.findall(r'["\'](https?://[^"\']*(?:api|search|efts|efd)[^"\']*)["\']', content)
+                    for u in urls[:10]:
+                        log(f"    ** API URL in script: {u}")
+                        interesting.append(u)
+            except Exception as e:
+                log(f"    Script fetch error: {e}")
+    return interesting
+
+
 def search_senate_ptrs(session: requests.Session, from_date: datetime, to_date: datetime) -> list:
-    """
-    Try multiple approaches to find PTR filings on the Senate eFD site.
-    Returns list of filing dicts with keys: member, pdf_url, filing_date.
-    """
     from_str = from_date.strftime("%Y-%m-%d")
     to_str = to_date.strftime("%Y-%m-%d")
 
-    # --- Step 1: Probe the main page and log everything ---
-    log(f"Probing {BASE}/ ...")
-    try:
-        resp = session.get(BASE + "/", timeout=30)
-        log(f"  Status: {resp.status_code}  Size: {len(resp.content)} bytes  CT: {resp.headers.get('Content-Type','?')[:60]}")
-        soup = BeautifulSoup(resp.content, "html.parser")
-        title = soup.find("title")
-        log(f"  Page title: {title.get_text(strip=True) if title else 'N/A'}")
+    # --- Step 1: Probe the main eFD page ---
+    for probe_url in [BASE + "/", BASE + "/Home/Home", BASE + "/Home/", BASE + "/eFD/"]:
+        log(f"Probing {probe_url} ...")
+        try:
+            resp = session.get(probe_url, timeout=30)
+            log(f"  Status: {resp.status_code}  Size: {len(resp.content)} bytes  CT: {resp.headers.get('Content-Type','?')[:60]}")
+            if resp.status_code != 200:
+                continue
 
-        for form in soup.find_all("form"):
-            log(f"  Form action={form.get('action')!r} method={form.get('method','get')!r}")
-            for f in form.find_all(["input", "select"]):
-                log(f"    {f.name} name={f.get('name')!r} value={str(f.get('value',''))[:50]!r}")
+            soup = BeautifulSoup(resp.content, "html.parser")
+            title = soup.find("title")
+            log(f"  Page title: {title.get_text(strip=True) if title else 'N/A'}")
 
-        all_links = [(a.get("href", ""), a.get_text(strip=True)) for a in soup.find_all("a", href=True)]
-        log(f"  Links ({len(all_links)} total):")
-        for href, text in all_links[:40]:
-            log(f"    {href!r}: {text[:60]!r}")
+            for form in soup.find_all("form"):
+                log(f"  Form action={form.get('action')!r} method={form.get('method','get')!r}")
+                for f in form.find_all(["input", "select"]):
+                    log(f"    {f.name} name={f.get('name')!r} value={str(f.get('value',''))[:80]!r}")
 
-        # Look for inline script snippets mentioning "api"
-        for s in soup.find_all("script", src=False):
-            t = (s.string or "")
-            if "api" in t.lower() and len(t) < 8000:
-                log(f"  Inline script (api mention): {t[:400]!r}")
+            all_links = [(a.get("href", ""), a.get_text(strip=True)) for a in soup.find_all("a", href=True)]
+            log(f"  Links ({len(all_links)} total, showing first 60):")
+            for href, text in all_links[:60]:
+                log(f"    {href!r}: {text[:80]!r}")
 
-    except Exception as e:
-        log(f"  Main page probe failed: {e}")
-        return []
+            # Inline scripts mentioning api / efts / efd
+            for s in soup.find_all("script", src=False):
+                t = (s.string or "")
+                if any(kw in t.lower() for kw in ("api", "efts", "efd", "search")) and len(t) < 10000:
+                    log(f"  Inline script snippet: {t[:600]!r}")
 
-    # --- Step 2: Try JSON API patterns ---
+            # External scripts
+            discovered_apis = _probe_scripts_for_api(session, soup, BASE)
+            if discovered_apis:
+                log(f"  Discovered {len(discovered_apis)} API URLs from scripts")
+
+        except Exception as e:
+            log(f"  Probe failed: {e}")
+
+    # --- Step 2: Try JSON API endpoints ---
     api_urls = [
-        # EFTS-style (old URL structure adapted to new domain)
+        # efts2 — likely replacement for the defunct efts.senate.gov
+        f"{EFTS2}/LATEST/search-index?q=&report_types=PTR&dateRange=custom&fromDate={from_str}&toDate={to_str}&results_count=100",
+        f"{EFTS2}/LATEST/search-index?q=&dateRange=custom&fromDate={from_str}&toDate={to_str}&results_count=100",
+        # www.disclosure.senate.gov paths
         f"{BASE}/LATEST/search-index?q=&report_types=PTR&dateRange=custom&fromDate={from_str}&toDate={to_str}&results_count=100",
-        f"{BASE}/LATEST/search-index?q=&dateRange=custom&fromDate={from_str}&toDate={to_str}&results_count=100",
-        # Common REST patterns
+        f"{BASE}/api/v1/filings?type=PTR&fromDate={from_str}&toDate={to_str}&limit=100",
         f"{BASE}/api/search?q=&report_types=PTR&dateRange=custom&fromDate={from_str}&toDate={to_str}&results_count=100",
         f"{BASE}/api/filings?filing_type=PTR&from_date={from_str}&to_date={to_str}&limit=100",
-        f"{BASE}/api/filings?filing_type=ptr&from_date={from_str}&to_date={to_str}&limit=100",
-        f"{BASE}/api/v1/filings?type=PTR&after={from_str}&limit=100",
-        f"{BASE}/search?q=&report_types=PTR&dateRange=custom&fromDate={from_str}&toDate={to_str}&results_count=100",
-        f"{BASE}/search?filing_type=PTR&from_date={from_str}&to_date={to_str}",
+        f"{BASE}/Home/Search?ReportType=ptr&FromDate={from_str}&ToDate={to_str}&format=json",
+        f"{BASE}/Financial/Search?type=PTR&fromDate={from_str}&toDate={to_str}&format=json",
+        # Original EFTS (may be resurrected or aliased)
+        f"https://efts.senate.gov/LATEST/search-index?q=&report_types=PTR&dateRange=custom&fromDate={from_str}&toDate={to_str}&results_count=100",
     ]
 
     for url in api_urls:
         try:
             r = session.get(url, headers={**HEADERS, "Accept": "application/json,text/html,*/*;q=0.8"}, timeout=15)
             ct = r.headers.get("Content-Type", "")
-            log(f"  {url[-90:]}: {r.status_code}  CT={ct[:50]}")
+            log(f"  {url}: {r.status_code}  CT={ct[:60]}")
 
             if r.status_code != 200:
                 continue
 
             if "json" in ct:
                 data = r.json()
-                log(f"    JSON preview: {json.dumps(data)[:600]}")
+                log(f"    JSON preview: {json.dumps(data)[:800]}")
                 filings = _extract_filings_from_json(data)
                 if filings:
-                    log(f"    SUCCESS: {len(filings)} filings via JSON at {url[-60:]}")
+                    log(f"    SUCCESS: {len(filings)} filings via JSON at {url}")
                     return filings
             else:
-                # HTML — look for PTR links
                 s = BeautifulSoup(r.content, "html.parser")
                 log(f"    HTML title: {(s.find('title') or s).get_text(strip=True)[:80]}")
+                # Log first 30 links to understand what page this is
+                for a in s.find_all("a", href=True)[:30]:
+                    log(f"    Link: {a.get('href')!r}: {a.get_text(strip=True)[:60]!r}")
+                # Try strict eFD-link matching
                 links = _find_ptr_links_in_html(s, BASE)
                 if links:
-                    log(f"    SUCCESS: {len(links)} PTR links in HTML at {url[-60:]}")
+                    log(f"    SUCCESS: {len(links)} PTR links in HTML at {url}")
                     return links
-                # Log what we can see
-                for a in s.find_all("a", href=True)[:20]:
-                    log(f"    Link: {a.get('href')!r}: {a.get_text(strip=True)[:50]!r}")
 
         except Exception as e:
-            log(f"  Error probing {url[-60:]}: {e}")
+            log(f"  Error probing {url}: {e}")
 
-    # --- Step 3: Try HTML form search ---
-    log("Trying HTML form search...")
-    try:
-        search_pages = [f"{BASE}/search", f"{BASE}/", f"{BASE}/filings"]
-        for page_url in search_pages:
+    # --- Step 3: Try HTML-based eFD search pages ---
+    log("Trying eFD-specific HTML search pages...")
+    efd_search_pages = [
+        f"{BASE}/Home/Search",
+        f"{BASE}/eFD/Search",
+        f"{BASE}/Financial/Search",
+        f"{BASE}/Home/Home",
+    ]
+    for page_url in efd_search_pages:
+        try:
             r = session.get(page_url, timeout=15)
+            log(f"  {page_url}: {r.status_code}")
             if r.status_code != 200:
                 continue
             s = BeautifulSoup(r.content, "html.parser")
-            form = s.find("form")
-            if not form:
-                continue
+            log(f"    Title: {(s.find('title') or s).get_text(strip=True)[:80]}")
+            for a in s.find_all("a", href=True)[:20]:
+                log(f"    Link: {a.get('href')!r}: {a.get_text(strip=True)[:60]!r}")
+            for form in s.find_all("form"):
+                log(f"    Form action={form.get('action')!r}")
+                for inp in form.find_all(["input", "select"]):
+                    log(f"      {inp.name} name={inp.get('name')!r}")
+        except Exception as e:
+            log(f"  {page_url} error: {e}")
 
-            action = form.get("action") or page_url
-            if not action.startswith("http"):
-                action = BASE + action
-            method = form.get("method", "get").lower()
-
-            # Build form data
-            form_data = {}
-            for inp in form.find_all("input"):
-                name = inp.get("name")
-                if name:
-                    form_data[name] = inp.get("value", "")
-            for sel in form.find_all("select"):
-                name = sel.get("name")
-                if name:
-                    opt = sel.find("option", selected=True) or sel.find("option")
-                    form_data[name] = opt.get("value", "") if opt else ""
-
-            # Add PTR-specific params
-            for key in list(form_data.keys()):
-                if "type" in key.lower() or "filing" in key.lower():
-                    form_data[key] = "PTR"
-                if "from" in key.lower() or "start" in key.lower():
-                    form_data[key] = from_str
-                if "to" in key.lower() or "end" in key.lower():
-                    form_data[key] = to_str
-
-            log(f"  Submitting form to {action}: {form_data}")
-            fn = session.post if method == "post" else session.get
-            r2 = fn(action, data=form_data if method == "post" else None,
-                    params=form_data if method == "get" else None, timeout=15)
-            log(f"  Form result: {r2.status_code}, {len(r2.content)} bytes")
-
-            s2 = BeautifulSoup(r2.content, "html.parser")
-            links = _find_ptr_links_in_html(s2, BASE)
-            if links:
-                log(f"  Found {len(links)} PTR links via form")
-                return links
-
-            log(f"  Form page text: {s2.get_text(separator=' ', strip=True)[:500]}")
-
-    except Exception as e:
-        log(f"  Form search error: {e}")
-
-    log("WARNING: No PTR filings found. Site structure unknown — review logs above.")
+    log("WARNING: No PTR filings found. Review logs above for site structure clues.")
     return []
 
 
@@ -355,14 +379,10 @@ def search_senate_ptrs(session: requests.Session, from_date: datetime, to_date: 
 # ---------------------------------------------------------------------------
 
 def resolve_pdf_url(session: requests.Session, filing: dict) -> str:
-    """
-    If filing has no pdf_url, try to find it by fetching the filing detail page.
-    """
     pdf_url = filing.get("pdf_url", "")
     if pdf_url and pdf_url.endswith(".pdf"):
         return pdf_url
 
-    # Some systems give a filing detail page URL instead of direct PDF
     detail_url = filing.get("pdf_url") or filing.get("detail_url", "")
     if detail_url and not detail_url.endswith(".pdf"):
         if not detail_url.startswith("http"):
@@ -398,13 +418,13 @@ def download_and_parse(session: requests.Session, filings: list) -> list:
         try:
             r = session.get(pdf_url, timeout=30)
             if r.status_code != 200:
-                log(f"  PDF {pdf_url[-60:]}: {r.status_code}")
+                log(f"  PDF {pdf_url}: {r.status_code}")
                 continue
             trades = parse_ptr_pdf(r.content, member, filing_date)
             log(f"  {member} ({filing_date}): {len(trades)} trades")
             all_trades.extend(trades)
         except Exception as e:
-            log(f"  PDF error {pdf_url[-50:]}: {e}")
+            log(f"  PDF error {pdf_url}: {e}")
 
     return all_trades
 
@@ -420,7 +440,6 @@ def main():
     log(f"=== Senate PTR sync: {cutoff.date()} → {now.date()} ===")
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
 
-    # Keep existing trades across runs (avoids re-downloading everything)
     existing = []
     if OUTPUT.exists():
         try:
@@ -437,7 +456,6 @@ def main():
 
     log(f"Found {len(new_trades)} new trades from {len(filings)} filings")
 
-    # Merge new over old by unique key; prune entries older than LOOKBACK_DAYS
     def key(t):
         return f"{t['member']}|{t['date']}|{t['ticker']}|{t['type']}"
 
