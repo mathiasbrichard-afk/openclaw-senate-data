@@ -258,12 +258,57 @@ def _probe_scripts_for_api(session: requests.Session, soup: BeautifulSoup, base_
     return interesting
 
 
+def _accept_agreement(session: requests.Session) -> bool:
+    """
+    efdsearch.senate.gov gates searches behind a prohibition_agreement POST form.
+    Accept it so the session cookie allows access to the search endpoint.
+    Returns True if successful.
+    """
+    try:
+        r = session.get(EFDSEARCH + "/", timeout=15)
+        if r.status_code != 200:
+            log(f"  Agreement page returned {r.status_code}")
+            return False
+        soup = BeautifulSoup(r.content, "html.parser")
+        csrf = ""
+        for inp in soup.find_all("input"):
+            if inp.get("name") == "csrfmiddlewaretoken":
+                csrf = inp.get("value", "")
+                break
+        log(f"  CSRF token: {csrf[:20]}...")
+        post_resp = session.post(
+            EFDSEARCH + "/",
+            data={"prohibition_agreement": "1", "csrfmiddlewaretoken": csrf},
+            headers={**HEADERS, "Referer": EFDSEARCH + "/", "Origin": EFDSEARCH},
+            timeout=15,
+            allow_redirects=True,
+        )
+        log(f"  Agreement POST → {post_resp.status_code}, URL: {post_resp.url}")
+        s = BeautifulSoup(post_resp.content, "html.parser")
+        title = s.find("title")
+        log(f"  Post-agreement page title: {title.get_text(strip=True) if title else 'N/A'}")
+        for a in s.find_all("a", href=True)[:20]:
+            log(f"    Link: {a.get('href')!r}: {a.get_text(strip=True)[:60]!r}")
+        for form in s.find_all("form"):
+            log(f"    Form action={form.get('action')!r}")
+            for inp in form.find_all(["input", "select"]):
+                log(f"      {inp.name} name={inp.get('name')!r} value={str(inp.get('value',''))[:60]!r}")
+        return post_resp.status_code == 200
+    except Exception as e:
+        log(f"  Agreement POST failed: {e}")
+        return False
+
+
 def search_senate_ptrs(session: requests.Session, from_date: datetime, to_date: datetime) -> list:
     from_str = from_date.strftime("%Y-%m-%d")
     to_str = to_date.strftime("%Y-%m-%d")
 
-    # --- Step 1: Probe the main eFD page and the newly discovered efdsearch domain ---
-    for probe_url in [BASE + "/", EFDSEARCH + "/", EFDSEARCH + "/search/", EFD + "/"]:
+    # --- Step 0: Accept agreement gate on efdsearch ---
+    log("Accepting efdsearch prohibition agreement...")
+    _accept_agreement(session)
+
+    # --- Step 1: Probe the main eFD page ---
+    for probe_url in [BASE + "/", EFDSEARCH + "/search/home/"]:
         log(f"Probing {probe_url} ...")
         try:
             resp = session.get(probe_url, timeout=30)
@@ -300,20 +345,20 @@ def search_senate_ptrs(session: requests.Session, from_date: datetime, to_date: 
             log(f"  Probe failed: {e}")
 
     # --- Step 2: Try JSON API endpoints ---
-    # efdsearch.senate.gov and efd.senate.gov discovered from main.js on disclosure.senate.gov
+    # efdsearch.senate.gov is a Django app (CSRF, DataTables).
+    # PTR report type is commonly "11" or "ptr" in Senate eFD systems.
     api_urls = [
-        # Primary: efdsearch — the actual eFD search API (discovered from main.js)
-        f"{EFDSEARCH}/search/home/",
-        f"{EFDSEARCH}/search/",
-        f"{EFDSEARCH}/LATEST/search-index?q=&report_types=PTR&dateRange=custom&fromDate={from_str}&toDate={to_str}&results_count=100",
-        f"{EFDSEARCH}/api/v1/filings?type=PTR&fromDate={from_str}&toDate={to_str}&limit=100",
-        f"{EFDSEARCH}/api/search?q=&report_types=PTR&dateRange=custom&fromDate={from_str}&toDate={to_str}",
-        # efd.senate.gov — secondary domain discovered from main.js
-        f"{EFD}/LATEST/search-index?q=&report_types=PTR&dateRange=custom&fromDate={from_str}&toDate={to_str}&results_count=100",
-        f"{EFD}/api/v1/filings?type=PTR&fromDate={from_str}&toDate={to_str}&limit=100",
-        # www.disclosure.senate.gov paths (fallback)
-        f"{BASE}/LATEST/search-index?q=&report_types=PTR&dateRange=custom&fromDate={from_str}&toDate={to_str}&results_count=100",
-        f"{BASE}/api/v1/filings?type=PTR&fromDate={from_str}&toDate={to_str}&limit=100",
+        # DataTables server-side: most likely endpoint pattern for Django eFD
+        f"{EFDSEARCH}/search/report/data/?report_types[]=11&dateRange=custom&fromDate={from_str}&toDate={to_str}&draw=1&start=0&length=100",
+        f"{EFDSEARCH}/search/report/data/?report_types[]=ptr&dateRange=custom&fromDate={from_str}&toDate={to_str}&draw=1&start=0&length=100",
+        f"{EFDSEARCH}/search/report/data/?report_types[]=PTR&dateRange=custom&fromDate={from_str}&toDate={to_str}&draw=1&start=0&length=100",
+        # Without DataTables params
+        f"{EFDSEARCH}/search/report/data/?report_types[]=11&dateRange=custom&fromDate={from_str}&toDate={to_str}",
+        f"{EFDSEARCH}/search/results/?report_types[]=11&dateRange=custom&fromDate={from_str}&toDate={to_str}",
+        f"{EFDSEARCH}/search/results/?report_types[]=PTR&dateRange=custom&fromDate={from_str}&toDate={to_str}",
+        # Alternate param names
+        f"{EFDSEARCH}/search/report/data/?reportType=PTR&fromDate={from_str}&toDate={to_str}&draw=1&start=0&length=100",
+        f"{EFDSEARCH}/api/search/?report_types=PTR&dateRange=custom&fromDate={from_str}&toDate={to_str}",
     ]
 
     for url in api_urls:
@@ -348,31 +393,28 @@ def search_senate_ptrs(session: requests.Session, from_date: datetime, to_date: 
             log(f"  Error probing {url}: {e}")
 
     # --- Step 3: Try HTML-based eFD search pages ---
-    log("Trying eFD-specific HTML search pages...")
-    efd_search_pages = [
-        f"{EFDSEARCH}/search/home/",
-        f"{EFDSEARCH}/search/results/",
-        f"{EFD}/search/",
-        f"{EFD}/Home/Search",
-        f"{BASE}/Home/Search",
-        f"{BASE}/eFD/Search",
-    ]
-    for page_url in efd_search_pages:
-        try:
-            r = session.get(page_url, timeout=15)
-            log(f"  {page_url}: {r.status_code}")
-            if r.status_code != 200:
-                continue
-            s = BeautifulSoup(r.content, "html.parser")
-            log(f"    Title: {(s.find('title') or s).get_text(strip=True)[:80]}")
-            for a in s.find_all("a", href=True)[:20]:
-                log(f"    Link: {a.get('href')!r}: {a.get_text(strip=True)[:60]!r}")
-            for form in s.find_all("form"):
-                log(f"    Form action={form.get('action')!r}")
-                for inp in form.find_all(["input", "select"]):
-                    log(f"      {inp.name} name={inp.get('name')!r}")
-        except Exception as e:
-            log(f"  {page_url} error: {e}")
+    # --- Step 3: Fetch efdsearch scripts to find the actual DataTables AJAX URL ---
+    log("Probing efdsearch scripts for AJAX endpoint...")
+    try:
+        r = session.get(f"{EFDSEARCH}/search/home/", timeout=15)
+        if r.status_code == 200:
+            soup_efd = BeautifulSoup(r.content, "html.parser")
+            log(f"  efdsearch/search/home title: {(soup_efd.find('title') or soup_efd).get_text(strip=True)[:80]}")
+            for a in soup_efd.find_all("a", href=True)[:30]:
+                log(f"  Link: {a.get('href')!r}: {a.get_text(strip=True)[:60]!r}")
+            for form in soup_efd.find_all("form"):
+                log(f"  Form action={form.get('action')!r} method={form.get('method','get')!r}")
+                for inp in form.find_all(["input", "select", "textarea"]):
+                    log(f"    {inp.name} name={inp.get('name')!r} value={str(inp.get('value',''))[:80]!r}")
+            # Inline scripts (DataTables ajax config will be here)
+            for s in soup_efd.find_all("script", src=False):
+                t = (s.string or "")
+                if len(t) > 20:
+                    log(f"  Inline script: {t[:800]!r}")
+            # External scripts
+            _probe_scripts_for_api(session, soup_efd, EFDSEARCH)
+    except Exception as e:
+        log(f"  efdsearch probe error: {e}")
 
     log("WARNING: No PTR filings found. Review logs above for site structure clues.")
     return []
