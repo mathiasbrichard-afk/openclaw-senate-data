@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-06-28T18:59:25Z",
+  "last_updated": "2026-06-29T02:08:45Z",
   "trades": [
     {
       "member": "James Banks",
@@ -502,66 +502,6 @@
       "type": "Sell",
       "date": "2026-03-31",
       "filing_date": "04/04/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Fetterman",
-      "chamber": "Senate",
-      "owner": "Child",
-      "asset": "Micron Technology, Inc. - Common Stock",
-      "ticker": "MU",
-      "type": "Buy",
-      "date": "2026-03-30",
-      "filing_date": "04/03/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Fetterman",
-      "chamber": "Senate",
-      "owner": "Child",
-      "asset": "Microsoft Corporation - Common Stock",
-      "ticker": "MSFT",
-      "type": "Buy",
-      "date": "2026-03-30",
-      "filing_date": "04/03/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Fetterman",
-      "chamber": "Senate",
-      "owner": "Child",
-      "asset": "Erie Indemnity Company - Class A Common Stock",
-      "ticker": "ERIE",
-      "type": "Buy",
-      "date": "2026-03-30",
-      "filing_date": "04/03/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Fetterman",
-      "chamber": "Senate",
-      "owner": "Child",
-      "asset": "Alphabet Inc. - Class C Capital Stock",
-      "ticker": "GOOG",
-      "type": "Buy",
-      "date": "2026-03-30",
-      "filing_date": "04/03/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Fetterman",
-      "chamber": "Senate",
-      "owner": "Child",
-      "asset": "Amazon.com, Inc. - Common Stock",
-      "ticker": "AMZN",
-      "type": "Buy",
-      "date": "2026-03-30",
-      "filing_date": "04/03/2026",
       "amount_raw": "$1,001 - $15,000",
       "amount_lower": 1001
     }
