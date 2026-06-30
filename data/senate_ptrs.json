@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-06-29T19:30:24Z",
+  "last_updated": "2026-06-30T02:03:22Z",
   "trades": [
     {
       "member": "James Banks",
@@ -490,18 +490,6 @@
       "type": "Sell (Partial)",
       "date": "2026-04-02",
       "filing_date": "05/08/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "Shelley M Capito",
-      "chamber": "Senate",
-      "owner": "Spouse",
-      "asset": "FactSet Research Systems Inc. Common Stock",
-      "ticker": "FDS",
-      "type": "Sell",
-      "date": "2026-03-31",
-      "filing_date": "04/04/2026",
       "amount_raw": "$1,001 - $15,000",
       "amount_lower": 1001
     }
