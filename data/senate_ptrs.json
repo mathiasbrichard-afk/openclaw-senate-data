@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-06-30T13:51:38Z",
+  "last_updated": "2026-06-30T19:28:59Z",
   "trades": [
     {
       "member": "James Banks",
@@ -10,6 +10,18 @@
       "type": "Sell",
       "date": "2026-06-05",
       "filing_date": "06/07/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
+    {
+      "member": "A. Mitchell McConnell, Jr.",
+      "chamber": "Senate",
+      "owner": "Spouse",
+      "asset": "Wells Fargo & Company Common Stock",
+      "ticker": "WFC",
+      "type": "Buy",
+      "date": "2026-06-01",
+      "filing_date": "06/30/2026",
       "amount_raw": "$1,001 - $15,000",
       "amount_lower": 1001
     },
