@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-07-01T19:27:21Z",
+  "last_updated": "2026-07-02T02:01:22Z",
   "trades": [
     {
       "member": "James Banks",
@@ -477,30 +477,6 @@
       "ticker": "DVN",
       "type": "Buy",
       "date": "2026-04-09",
-      "filing_date": "05/08/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "Constellation Energy Corporation - Common Stock When-Issued",
-      "ticker": "CEG",
-      "type": "Buy",
-      "date": "2026-04-02",
-      "filing_date": "05/08/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "Invesco Short Term Treasury ETF",
-      "ticker": "TBLL",
-      "type": "Sell (Partial)",
-      "date": "2026-04-02",
       "filing_date": "05/08/2026",
       "amount_raw": "$1,001 - $15,000",
       "amount_lower": 1001
