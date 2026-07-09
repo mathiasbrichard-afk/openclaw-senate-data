@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-07-08T19:02:56Z",
+  "last_updated": "2026-07-09T01:31:14Z",
   "trades": [
     {
       "member": "James Banks",
@@ -466,18 +466,6 @@
       "type": "Sell (Partial)",
       "date": "2026-04-13",
       "filing_date": "05/07/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "Devon Energy Corporation Common Stock",
-      "ticker": "DVN",
-      "type": "Buy",
-      "date": "2026-04-09",
-      "filing_date": "05/08/2026",
       "amount_raw": "$1,001 - $15,000",
       "amount_lower": 1001
     }
