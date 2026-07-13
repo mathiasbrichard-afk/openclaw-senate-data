@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-07-12T18:45:24Z",
+  "last_updated": "2026-07-13T01:25:26Z",
   "trades": [
     {
       "member": "James Banks",
@@ -454,18 +454,6 @@
       "type": "Sell",
       "date": "2026-04-15",
       "filing_date": "04/20/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "Shelley M Capito",
-      "chamber": "Senate",
-      "owner": "Spouse",
-      "asset": "Broadcom Inc. - Common Stock",
-      "ticker": "AVGO",
-      "type": "Sell (Partial)",
-      "date": "2026-04-13",
-      "filing_date": "05/07/2026",
       "amount_raw": "$1,001 - $15,000",
       "amount_lower": 1001
     }
