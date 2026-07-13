@@ -1,6 +1,78 @@
 {
-  "last_updated": "2026-07-13T13:57:51Z",
+  "last_updated": "2026-07-13T19:08:33Z",
   "trades": [
+    {
+      "member": "John Boozman",
+      "chamber": "Senate",
+      "owner": "Joint",
+      "asset": "iShares Expanded Tech-Software Sector ETF",
+      "ticker": "IGV",
+      "type": "Buy",
+      "date": "2026-06-25",
+      "filing_date": "07/13/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
+    {
+      "member": "John Boozman",
+      "chamber": "Senate",
+      "owner": "Joint",
+      "asset": "abrdn Physical Palladium Shares ETF",
+      "ticker": "PALL",
+      "type": "Buy",
+      "date": "2026-06-25",
+      "filing_date": "07/13/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
+    {
+      "member": "John Boozman",
+      "chamber": "Senate",
+      "owner": "Joint",
+      "asset": "Tortoise North American Pipeline Fund",
+      "ticker": "TPYP",
+      "type": "Sell (Partial)",
+      "date": "2026-06-25",
+      "filing_date": "07/13/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
+    {
+      "member": "John Boozman",
+      "chamber": "Senate",
+      "owner": "Joint",
+      "asset": "First Trust Global Tactical Commodity Strategy Fund",
+      "ticker": "FTGC",
+      "type": "Sell (Partial)",
+      "date": "2026-06-25",
+      "filing_date": "07/13/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
+    {
+      "member": "John Boozman",
+      "chamber": "Senate",
+      "owner": "Joint",
+      "asset": "iShares 7-10 Year Treasury Bond ETF",
+      "ticker": "IEF",
+      "type": "Sell (Partial)",
+      "date": "2026-06-17",
+      "filing_date": "07/13/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
+    {
+      "member": "John Boozman",
+      "chamber": "Senate",
+      "owner": "Joint",
+      "asset": "Atmos Energy Corporation Common Stock",
+      "ticker": "ATO",
+      "type": "Sell",
+      "date": "2026-06-12",
+      "filing_date": "07/13/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
     {
       "member": "James Banks",
       "chamber": "Senate",
@@ -10,6 +82,30 @@
       "type": "Sell",
       "date": "2026-06-05",
       "filing_date": "06/07/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
+    {
+      "member": "John Boozman",
+      "chamber": "Senate",
+      "owner": "Joint",
+      "asset": "UnitedHealth Group Incorporated Common Stock (DE)",
+      "ticker": "UNH",
+      "type": "Buy",
+      "date": "2026-06-04",
+      "filing_date": "07/13/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
+    {
+      "member": "John Boozman",
+      "chamber": "Senate",
+      "owner": "Joint",
+      "asset": "Boston Scientific Corporation Common Stock",
+      "ticker": "BSX",
+      "type": "Sell (Partial)",
+      "date": "2026-06-04",
+      "filing_date": "07/13/2026",
       "amount_raw": "$1,001 - $15,000",
       "amount_lower": 1001
     },
