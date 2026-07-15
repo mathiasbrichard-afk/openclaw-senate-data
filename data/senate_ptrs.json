@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-07-14T18:58:30Z",
+  "last_updated": "2026-07-15T01:11:26Z",
   "trades": [
     {
       "member": "John Boozman",
@@ -538,18 +538,6 @@
       "type": "Sell (Partial)",
       "date": "2026-04-17",
       "filing_date": "05/07/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "James Banks",
-      "chamber": "Senate",
-      "owner": "Self",
-      "asset": "Starbucks Corporation - Common Stock",
-      "ticker": "SBUX",
-      "type": "Sell",
-      "date": "2026-04-15",
-      "filing_date": "04/20/2026",
       "amount_raw": "$1,001 - $15,000",
       "amount_lower": 1001
     }
