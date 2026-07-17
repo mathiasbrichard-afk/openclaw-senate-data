@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-07-16T18:53:06Z",
+  "last_updated": "2026-07-17T01:24:08Z",
   "trades": [
     {
       "member": "John Boozman",
@@ -516,30 +516,6 @@
       "filing_date": "06/16/2026",
       "amount_raw": "$50,001 - $100,000",
       "amount_lower": 50001
-    },
-    {
-      "member": "Shelley M Capito",
-      "chamber": "Senate",
-      "owner": "Spouse",
-      "asset": "Constellation Energy Corporation - Common Stock When-Issued",
-      "ticker": "CEG",
-      "type": "Sell (Partial)",
-      "date": "2026-04-17",
-      "filing_date": "05/07/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "Shelley M Capito",
-      "chamber": "Senate",
-      "owner": "Spouse",
-      "asset": "Apple Inc. - Common Stock",
-      "ticker": "AAPL",
-      "type": "Sell (Partial)",
-      "date": "2026-04-17",
-      "filing_date": "05/07/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
     }
   ]
 }
