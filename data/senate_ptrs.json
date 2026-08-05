@@ -1,6 +1,66 @@
 {
-  "last_updated": "2026-08-04T19:16:22Z",
+  "last_updated": "2026-08-05T01:20:57Z",
   "trades": [
+    {
+      "member": "Shelley M Capito",
+      "chamber": "Senate",
+      "owner": "Spouse",
+      "asset": "Microsoft Corporation - Common Stock",
+      "ticker": "MSFT",
+      "type": "Sell (Partial)",
+      "date": "2026-07-21",
+      "filing_date": "08/04/2026",
+      "amount_raw": "$15,001 - $50,000",
+      "amount_lower": 15001
+    },
+    {
+      "member": "Shelley M Capito",
+      "chamber": "Senate",
+      "owner": "Spouse",
+      "asset": "Apple Inc. - Common Stock",
+      "ticker": "AAPL",
+      "type": "Sell (Partial)",
+      "date": "2026-07-21",
+      "filing_date": "08/04/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
+    {
+      "member": "Shelley M Capito",
+      "chamber": "Senate",
+      "owner": "Spouse",
+      "asset": "Intel Corporation - Common Stock",
+      "ticker": "INTC",
+      "type": "Sell (Partial)",
+      "date": "2026-07-21",
+      "filing_date": "08/04/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
+    {
+      "member": "Shelley M Capito",
+      "chamber": "Senate",
+      "owner": "Spouse",
+      "asset": "Coca-Cola Company (The) Common Stock",
+      "ticker": "KO",
+      "type": "Sell (Partial)",
+      "date": "2026-07-21",
+      "filing_date": "08/04/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
+    {
+      "member": "Shelley M Capito",
+      "chamber": "Senate",
+      "owner": "Spouse",
+      "asset": "Cisco Systems, Inc. - Common Stock",
+      "ticker": "CSCO",
+      "type": "Sell (Partial)",
+      "date": "2026-07-21",
+      "filing_date": "08/04/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
     {
       "member": "John Boozman",
       "chamber": "Senate",
