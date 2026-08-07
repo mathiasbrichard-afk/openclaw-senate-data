@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-08-06T23:46:47Z",
+  "last_updated": "2026-08-07T01:59:13Z",
   "trades": [
     {
       "member": "Shelley M Capito",
@@ -120,6 +120,18 @@
       "filing_date": "07/21/2026",
       "amount_raw": "$5,000,001 - $25,000,000",
       "amount_lower": 5000001
+    },
+    {
+      "member": "Jerry Moran,",
+      "chamber": "Senate",
+      "owner": "Self",
+      "asset": "Alphabet Inc. - Class C Capital Stock",
+      "ticker": "GOOG",
+      "type": "Buy",
+      "date": "2026-06-23",
+      "filing_date": "07/21/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
     },
     {
       "member": "Alan Armstrong",
@@ -466,6 +478,18 @@
       "type": "Sell (Partial)",
       "date": "2026-05-27",
       "filing_date": "06/16/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
+    {
+      "member": "Jerry Moran,",
+      "chamber": "Senate",
+      "owner": "Self",
+      "asset": "Alphabet Inc. - Class C Capital Stock",
+      "ticker": "GOOG",
+      "type": "Sell (Partial)",
+      "date": "2026-05-27",
+      "filing_date": "06/25/2026",
       "amount_raw": "$1,001 - $15,000",
       "amount_lower": 1001
     },
