@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-08-11T18:43:22Z",
+  "last_updated": "2026-08-12T00:54:27Z",
   "trades": [
     {
       "member": "Shelley M Capito",
@@ -540,90 +540,6 @@
       "filing_date": "06/16/2026",
       "amount_raw": "$1,001 - $15,000",
       "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "Schwab U.S. TIPS ETF",
-      "ticker": "SCHP",
-      "type": "Sell (Partial)",
-      "date": "2026-05-13",
-      "filing_date": "06/16/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "Janus Henderson Mortgage-Backed Securities ETF",
-      "ticker": "JMBS",
-      "type": "Sell (Partial)",
-      "date": "2026-05-13",
-      "filing_date": "06/16/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "iShares CMBS ETF",
-      "ticker": "CMBS",
-      "type": "Sell (Partial)",
-      "date": "2026-05-13",
-      "filing_date": "06/16/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "iShares 3-7 Year Treasury Bond ETF",
-      "ticker": "IEI",
-      "type": "Sell",
-      "date": "2026-05-13",
-      "filing_date": "06/16/2026",
-      "amount_raw": "$50,001 - $100,000",
-      "amount_lower": 50001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "iShares MBS ETF",
-      "ticker": "MBB",
-      "type": "Sell (Partial)",
-      "date": "2026-05-13",
-      "filing_date": "06/16/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "Goldman Sachs Access Investment Grade Corporate Bond ETF",
-      "ticker": "GIGB",
-      "type": "Buy",
-      "date": "2026-05-13",
-      "filing_date": "06/16/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "BondBloxx Bloomberg Five Year Target Duration US Treasury ETF",
-      "ticker": "XFIV",
-      "type": "Buy",
-      "date": "2026-05-13",
-      "filing_date": "06/16/2026",
-      "amount_raw": "$50,001 - $100,000",
-      "amount_lower": 50001
     }
   ]
 }
