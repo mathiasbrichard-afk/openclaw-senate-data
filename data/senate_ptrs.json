@@ -1,6 +1,18 @@
 {
-  "last_updated": "2026-08-14T12:36:24Z",
+  "last_updated": "2026-08-14T18:38:11Z",
   "trades": [
+    {
+      "member": "Gary C Peters",
+      "chamber": "Senate",
+      "owner": "Self",
+      "asset": "Realty Income Corporation Common Stock",
+      "ticker": "O",
+      "type": "Buy",
+      "date": "2026-07-23",
+      "filing_date": "08/07/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
     {
       "member": "Shelley M Capito",
       "chamber": "Senate",
