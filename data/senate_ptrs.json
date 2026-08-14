@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-08-13T18:44:56Z",
+  "last_updated": "2026-08-14T00:55:07Z",
   "trades": [
     {
       "member": "Shelley M Capito",
@@ -58,6 +58,18 @@
       "type": "Sell (Partial)",
       "date": "2026-07-21",
       "filing_date": "08/04/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
+    {
+      "member": "Gary C Peters",
+      "chamber": "Senate",
+      "owner": "Self",
+      "asset": "AT&T Inc.",
+      "ticker": "T",
+      "type": "Buy",
+      "date": "2026-06-29",
+      "filing_date": "07/02/2026",
       "amount_raw": "$1,001 - $15,000",
       "amount_lower": 1001
     },
@@ -490,54 +502,6 @@
       "type": "Sell (Partial)",
       "date": "2026-05-27",
       "filing_date": "06/25/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "Ecolab Inc. Common Stock",
-      "ticker": "ECL",
-      "type": "Sell (Partial)",
-      "date": "2026-05-15",
-      "filing_date": "06/16/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "Palantir Technologies Inc. - Class A Common Stock",
-      "ticker": "PLTR",
-      "type": "Buy",
-      "date": "2026-05-15",
-      "filing_date": "06/16/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "Albemarle Corporation Common Stock",
-      "ticker": "ALB",
-      "type": "Buy",
-      "date": "2026-05-15",
-      "filing_date": "06/16/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "Accenture plc Class A Ordinary Shares (Ireland)",
-      "ticker": "ACN",
-      "type": "Sell (Partial)",
-      "date": "2026-05-15",
-      "filing_date": "06/16/2026",
       "amount_raw": "$1,001 - $15,000",
       "amount_lower": 1001
     }
