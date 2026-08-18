@@ -1,6 +1,30 @@
 {
-  "last_updated": "2026-08-17T18:20:00Z",
+  "last_updated": "2026-08-18T00:30:35Z",
   "trades": [
+    {
+      "member": "John Boozman",
+      "chamber": "Senate",
+      "owner": "Joint",
+      "asset": "Cboe Global Markets, Inc. Common Stock",
+      "ticker": "CBOE",
+      "type": "Sell",
+      "date": "2026-07-31",
+      "filing_date": "08/17/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
+    {
+      "member": "John Boozman",
+      "chamber": "Senate",
+      "owner": "Joint",
+      "asset": "PayPal Holdings, Inc. - Common Stock",
+      "ticker": "PYPL",
+      "type": "Buy",
+      "date": "2026-07-30",
+      "filing_date": "08/17/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
     {
       "member": "Gary C Peters",
       "chamber": "Senate",
@@ -10,6 +34,30 @@
       "type": "Buy",
       "date": "2026-07-23",
       "filing_date": "08/07/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
+    {
+      "member": "John Boozman",
+      "chamber": "Senate",
+      "owner": "Joint",
+      "asset": "Tradr 2X Long SPY Monthly ETF",
+      "ticker": "SPYM",
+      "type": "Buy",
+      "date": "2026-07-23",
+      "filing_date": "08/17/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
+    {
+      "member": "John Boozman",
+      "chamber": "Senate",
+      "owner": "Joint",
+      "asset": "JP Morgan Chase & Co. Common Stock",
+      "ticker": "JPM",
+      "type": "Sell (Partial)",
+      "date": "2026-07-23",
+      "filing_date": "08/17/2026",
       "amount_raw": "$1,001 - $15,000",
       "amount_lower": 1001
     },
@@ -70,6 +118,78 @@
       "type": "Sell (Partial)",
       "date": "2026-07-21",
       "filing_date": "08/04/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
+    {
+      "member": "John Boozman",
+      "chamber": "Senate",
+      "owner": "Joint",
+      "asset": "Aptiv PLC Ordinary Shares",
+      "ticker": "APTV",
+      "type": "Buy",
+      "date": "2026-07-09",
+      "filing_date": "08/17/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
+    {
+      "member": "John Boozman",
+      "chamber": "Senate",
+      "owner": "Joint",
+      "asset": "Home Depot, Inc. (The) Common Stock",
+      "ticker": "HD",
+      "type": "Sell",
+      "date": "2026-07-09",
+      "filing_date": "08/17/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
+    {
+      "member": "John Boozman",
+      "chamber": "Senate",
+      "owner": "Joint",
+      "asset": "Estee Lauder Companies, Inc. (The) Common Stock",
+      "ticker": "EL",
+      "type": "Buy",
+      "date": "2026-07-02",
+      "filing_date": "08/17/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
+    {
+      "member": "John Boozman",
+      "chamber": "Senate",
+      "owner": "Joint",
+      "asset": "Chevron Corporation Common Stock",
+      "ticker": "CVX",
+      "type": "Buy",
+      "date": "2026-07-02",
+      "filing_date": "08/17/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
+    {
+      "member": "John Boozman",
+      "chamber": "Senate",
+      "owner": "Joint",
+      "asset": "Tradr 2X Long SPY Monthly ETF",
+      "ticker": "SPYM",
+      "type": "Buy",
+      "date": "2026-07-02",
+      "filing_date": "08/17/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
+    },
+    {
+      "member": "John Boozman",
+      "chamber": "Senate",
+      "owner": "Joint",
+      "asset": "The Travelers Companies, Inc. Common Stock",
+      "ticker": "TRV",
+      "type": "Sell",
+      "date": "2026-07-02",
+      "filing_date": "08/17/2026",
       "amount_raw": "$1,001 - $15,000",
       "amount_lower": 1001
     },
