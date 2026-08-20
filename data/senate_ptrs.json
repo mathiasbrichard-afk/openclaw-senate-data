@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-08-19T18:16:42Z",
+  "last_updated": "2026-08-20T00:31:20Z",
   "trades": [
     {
       "member": "John Boozman",
@@ -634,18 +634,6 @@
       "type": "Sell (Partial)",
       "date": "2026-05-27",
       "filing_date": "06/25/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "Gary C Peters",
-      "chamber": "Senate",
-      "owner": "Self",
-      "asset": "The Kraft Heinz Company - Common Stock",
-      "ticker": "KHC",
-      "type": "Buy",
-      "date": "2026-05-21",
-      "filing_date": "06/11/2026",
       "amount_raw": "$1,001 - $15,000",
       "amount_lower": 1001
     }
