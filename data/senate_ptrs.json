@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-09-02T20:12:27Z",
+  "last_updated": "2026-09-03T01:46:15Z",
   "trades": [
     {
       "member": "John Boozman",
@@ -322,30 +322,6 @@
       "type": "Sell",
       "date": "2026-06-05",
       "filing_date": "06/07/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "UnitedHealth Group Incorporated Common Stock (DE)",
-      "ticker": "UNH",
-      "type": "Buy",
-      "date": "2026-06-04",
-      "filing_date": "07/13/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "Boston Scientific Corporation Common Stock",
-      "ticker": "BSX",
-      "type": "Sell (Partial)",
-      "date": "2026-06-04",
-      "filing_date": "07/13/2026",
       "amount_raw": "$1,001 - $15,000",
       "amount_lower": 1001
     }
