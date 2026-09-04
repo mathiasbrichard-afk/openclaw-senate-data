@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-09-03T20:13:22Z",
+  "last_updated": "2026-09-04T01:40:34Z",
   "trades": [
     {
       "member": "John Boozman",
@@ -310,18 +310,6 @@
       "type": "Sell",
       "date": "2026-06-12",
       "filing_date": "07/13/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "James Banks",
-      "chamber": "Senate",
-      "owner": "Self",
-      "asset": "Peloton Interactive, Inc. - Common Stock",
-      "ticker": "PTON",
-      "type": "Sell",
-      "date": "2026-06-05",
-      "filing_date": "06/07/2026",
       "amount_raw": "$1,001 - $15,000",
       "amount_lower": 1001
     }
