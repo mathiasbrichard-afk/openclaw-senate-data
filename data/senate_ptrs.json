@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-09-15T20:33:00Z",
+  "last_updated": "2026-09-16T02:00:21Z",
   "trades": [
     {
       "member": "John Boozman",
@@ -468,18 +468,6 @@
       "filing_date": "07/21/2026",
       "amount_raw": "$250,001 - $500,000",
       "amount_lower": 250001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "iShares 7-10 Year Treasury Bond ETF",
-      "ticker": "IEF",
-      "type": "Sell (Partial)",
-      "date": "2026-06-17",
-      "filing_date": "07/13/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
     }
   ]
 }
