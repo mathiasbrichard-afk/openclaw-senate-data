@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-09-17T10:33:16Z",
+  "last_updated": "2026-09-17T15:46:11Z",
   "trades": [
     {
       "member": "John Boozman",
@@ -50,6 +50,18 @@
       "amount_lower": 1001
     },
     {
+      "member": "Alan Armstrong",
+      "chamber": "Senate",
+      "owner": "Joint",
+      "asset": "Williams Companies, Inc. (The) Common StockOption Type: CallStrike price:$75.00Expires:2026-08-21",
+      "ticker": "WMB",
+      "type": "Buy",
+      "date": "2026-08-20",
+      "filing_date": "09/17/2026",
+      "amount_raw": "$15,001 - $50,000",
+      "amount_lower": 15001
+    },
+    {
       "member": "John Boozman",
       "chamber": "Senate",
       "owner": "Joint",
@@ -84,6 +96,18 @@
       "filing_date": "09/11/2026",
       "amount_raw": "$15,001 - $50,000",
       "amount_lower": 15001
+    },
+    {
+      "member": "Alan Armstrong",
+      "chamber": "Senate",
+      "owner": "Joint",
+      "asset": "Williams Companies, Inc. (The) Common StockOption Type: CallStrike price:$75.00Expires:2026-08-21",
+      "ticker": "WMB",
+      "type": "Buy",
+      "date": "2026-08-19",
+      "filing_date": "09/17/2026",
+      "amount_raw": "$1,001 - $15,000",
+      "amount_lower": 1001
     },
     {
       "member": "John Boozman",
