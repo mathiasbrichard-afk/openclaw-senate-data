@@ -1,6 +1,18 @@
 {
-  "last_updated": "2026-09-21T17:17:45Z",
+  "last_updated": "2026-09-21T21:18:19Z",
   "trades": [
+    {
+      "member": "A. Mitchell McConnell, Jr.",
+      "chamber": "Senate",
+      "owner": "Spouse",
+      "asset": "Wells Fargo & Company Common Stock",
+      "ticker": "WFC",
+      "type": "Buy",
+      "date": "2026-09-01",
+      "filing_date": "09/21/2026",
+      "amount_raw": "$15,001 - $50,000",
+      "amount_lower": 15001
+    },
     {
       "member": "John Boozman",
       "chamber": "Senate",
