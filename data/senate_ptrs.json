@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-09-21T21:18:19Z",
+  "last_updated": "2026-09-22T02:07:17Z",
   "trades": [
     {
       "member": "A. Mitchell McConnell, Jr.",
@@ -480,18 +480,6 @@
       "filing_date": "07/21/2026",
       "amount_raw": "$5,000,001 - $25,000,000",
       "amount_lower": 5000001
-    },
-    {
-      "member": "Jerry Moran,",
-      "chamber": "Senate",
-      "owner": "Self",
-      "asset": "Alphabet Inc. - Class C Capital Stock",
-      "ticker": "GOOG",
-      "type": "Buy",
-      "date": "2026-06-23",
-      "filing_date": "07/21/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
     }
   ]
 }
