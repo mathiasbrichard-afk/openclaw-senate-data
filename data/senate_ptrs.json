@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-09-23T20:45:45Z",
+  "last_updated": "2026-09-24T01:53:58Z",
   "trades": [
     {
       "member": "A. Mitchell McConnell, Jr.",
@@ -418,54 +418,6 @@
       "type": "Buy",
       "date": "2026-06-29",
       "filing_date": "07/02/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "iShares Expanded Tech-Software Sector ETF",
-      "ticker": "IGV",
-      "type": "Buy",
-      "date": "2026-06-25",
-      "filing_date": "07/13/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "abrdn Physical Palladium Shares ETF",
-      "ticker": "PALL",
-      "type": "Buy",
-      "date": "2026-06-25",
-      "filing_date": "07/13/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "Tortoise North American Pipeline Fund",
-      "ticker": "TPYP",
-      "type": "Sell (Partial)",
-      "date": "2026-06-25",
-      "filing_date": "07/13/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "First Trust Global Tactical Commodity Strategy Fund",
-      "ticker": "FTGC",
-      "type": "Sell (Partial)",
-      "date": "2026-06-25",
-      "filing_date": "07/13/2026",
       "amount_raw": "$1,001 - $15,000",
       "amount_lower": 1001
     }
