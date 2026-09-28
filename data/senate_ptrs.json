@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-09-27T20:31:44Z",
+  "last_updated": "2026-09-28T02:15:26Z",
   "trades": [
     {
       "member": "A. Mitchell McConnell, Jr.",
@@ -406,18 +406,6 @@
       "type": "Sell",
       "date": "2026-07-02",
       "filing_date": "08/17/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "Gary C Peters",
-      "chamber": "Senate",
-      "owner": "Self",
-      "asset": "AT&T Inc.",
-      "ticker": "T",
-      "type": "Buy",
-      "date": "2026-06-29",
-      "filing_date": "07/02/2026",
       "amount_raw": "$1,001 - $15,000",
       "amount_lower": 1001
     }
