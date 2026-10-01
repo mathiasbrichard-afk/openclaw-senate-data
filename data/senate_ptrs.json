@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-09-30T21:36:08Z",
+  "last_updated": "2026-10-01T02:46:24Z",
   "trades": [
     {
       "member": "A. Mitchell McConnell, Jr.",
@@ -357,54 +357,6 @@
       "ticker": "HD",
       "type": "Sell",
       "date": "2026-07-09",
-      "filing_date": "08/17/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "Estee Lauder Companies, Inc. (The) Common Stock",
-      "ticker": "EL",
-      "type": "Buy",
-      "date": "2026-07-02",
-      "filing_date": "08/17/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "Chevron Corporation Common Stock",
-      "ticker": "CVX",
-      "type": "Buy",
-      "date": "2026-07-02",
-      "filing_date": "08/17/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "Tradr 2X Long SPY Monthly ETF",
-      "ticker": "SPYM",
-      "type": "Buy",
-      "date": "2026-07-02",
-      "filing_date": "08/17/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "The Travelers Companies, Inc. Common Stock",
-      "ticker": "TRV",
-      "type": "Sell",
-      "date": "2026-07-02",
       "filing_date": "08/17/2026",
       "amount_raw": "$1,001 - $15,000",
       "amount_lower": 1001
