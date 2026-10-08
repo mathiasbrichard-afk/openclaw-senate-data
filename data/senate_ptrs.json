@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-10-07T22:21:44Z",
+  "last_updated": "2026-10-08T03:16:03Z",
   "trades": [
     {
       "member": "A. Mitchell McConnell, Jr.",
@@ -334,30 +334,6 @@
       "type": "Sell (Partial)",
       "date": "2026-07-21",
       "filing_date": "08/04/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "Aptiv PLC Ordinary Shares",
-      "ticker": "APTV",
-      "type": "Buy",
-      "date": "2026-07-09",
-      "filing_date": "08/17/2026",
-      "amount_raw": "$1,001 - $15,000",
-      "amount_lower": 1001
-    },
-    {
-      "member": "John Boozman",
-      "chamber": "Senate",
-      "owner": "Joint",
-      "asset": "Home Depot, Inc. (The) Common Stock",
-      "ticker": "HD",
-      "type": "Sell",
-      "date": "2026-07-09",
-      "filing_date": "08/17/2026",
       "amount_raw": "$1,001 - $15,000",
       "amount_lower": 1001
     }
